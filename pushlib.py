@@ -1,3 +1,4 @@
+from abc import ABCMeta, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
 from mido import Message
@@ -103,6 +104,9 @@ class Color:
         yield self.blue
 
 
+BLACK = Color(0, 0, 0)
+
+
 @dataclass(frozen=True)
 class Pos:
     """
@@ -171,21 +175,45 @@ def push_ports_context() -> Generator[Ports, None, None]:
         ports.close()
 
 
-class Push:
-    def __init__(self, ports: Ports) -> None:
-        self._ports = ports
+class Resettable(metaclass=ABCMeta):
+    @abstractmethod
+    def reset(self) -> None:
+        raise NotImplementedError()
+
+
+class ButtonOutput(Resettable):
+    def __init__(self, pos: Pos, out_port: BaseOutput) -> None:
+        self._pos = pos
+        self._out_port = out_port
+
+    def led_on(self, value: int) -> None:
+        message = make_led_message(self._pos, value)
+        self._out_port.send(message)
+
+    def led_off(self) -> None:
+        self.led_on(0)
+
+    def set_color(self, color: Color) -> None:
+        message = make_color_message(self._pos, color)
+        self._out_port.send(message)
 
     def reset(self) -> None:
-        black = Color(0, 0, 0)
+        self.led_off()
+        self.set_color(BLACK)
+
+
+class PushOutput(Resettable):
+    def __init__(self, out_port: BaseOutput) -> None:
+        self._out_port = out_port
+
+    def reset(self) -> None:
         for pos in all_pos():
-            led_message = make_led_message(pos, 0)
-            color_message = make_color_message(pos, black)
-            self._ports.out_port.send(led_message)
-            self._ports.out_port.send(color_message)
+            button = ButtonOutput(pos, self._out_port)
+            button.reset()
 
 
 def handle(ports: Ports) -> None:
-    push = Push(ports)
+    push = PushOutput(ports.out_port)
     push.reset()
     for msg in ports.in_port:
         print(msg)
