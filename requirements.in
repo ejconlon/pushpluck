@@ -7,3 +7,4 @@ pytest
 
 # App requirements
 mido
+python-rtmidi

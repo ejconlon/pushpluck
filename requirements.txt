@@ -32,6 +32,7 @@ pyflakes==2.2.0           # via flake8
 pygments==2.6.1           # via ipython
 pyparsing==2.4.7          # via packaging
 pytest==6.0.1             # via -r requirements.in
+python-rtmidi==1.4.2      # via -r requirements.in
 six==1.15.0               # via packaging, traitlets
 toml==0.10.1              # via pytest
 traitlets==4.3.3          # via ipython
