@@ -1,1 +1,9 @@
+# Dev requirements
+flake8
+ipython
+isort
+mypy
+pytest
+
+# App requirements
 mido

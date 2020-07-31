@@ -1,3 +1,6 @@
+from typing import Dict
+
+
 BUTTON_TO_CC: Dict[str, int] = {
     'TapTempo': 3,
     'Metronome': 9,
