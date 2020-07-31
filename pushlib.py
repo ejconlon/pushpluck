@@ -1,4 +1,9 @@
-from typing import Dict
+from contextlib import contextmanager
+from dataclasses import dataclass
+from mido.ports import BaseInput, BaseOutput
+from typing import Dict, Generator
+
+import mido
 
 
 BUTTON_TO_CC: Dict[str, int] = {
@@ -54,3 +59,40 @@ TIME_DIV_BUTTON_TO_CC: Dict[str, int] = {
     '1/32': 42,
     '1/32t': 43
 }
+
+
+PUSH_PORT_NAME = 'Ableton Push User Port'
+
+
+@dataclass(frozen=True)
+class Ports:
+    in_port: BaseInput
+    out_port: BaseOutput
+
+    @staticmethod
+    def open_push_ports() -> 'Ports':
+        in_port = mido.open_input(PUSH_PORT_NAME)
+        out_port = mido.open_output(PUSH_PORT_NAME)
+        return Ports(in_port=in_port, out_port=out_port)
+
+    def close(self) -> None:
+        self.in_port.close()
+        self.out_port.close()
+
+
+@contextmanager
+def push_ports_context() -> Generator[Ports, None, None]:
+    ports = Ports.open_push_ports()
+    try:
+        yield ports
+    finally:
+        ports.close()
+
+
+def main():
+    with push_ports_context() as ports:
+        assert ports is not None
+
+
+if __name__ == '__main__':
+    main()
