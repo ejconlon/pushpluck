@@ -1,7 +1,8 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
+from mido import Message
 from mido.ports import BaseInput, BaseOutput
-from typing import Dict, Generator
+from typing import Dict, Generator, List
 
 import mido
 
@@ -62,22 +63,103 @@ TIME_DIV_BUTTON_TO_CC: Dict[str, int] = {
 
 
 PUSH_PORT_NAME = 'Ableton Push User Port'
+PROCESSED_PORT_NAME = 'Ableton Push Processed Port'
+LOW_NOTE = 36
+NUM_PAD_ROWS = 8
+NUM_PAD_COLS = 8
+NUM_PADS = NUM_PAD_ROWS * NUM_PAD_COLS
+HIGH_NOTE = LOW_NOTE + NUM_PADS
+ABLETON_SYSEX_PREFIX = (71, 127, 21)
 
 
 @dataclass(frozen=True)
 class Ports:
     in_port: BaseInput
     out_port: BaseOutput
+    processed_port: BaseOutput
 
     @staticmethod
     def open_push_ports() -> 'Ports':
         in_port = mido.open_input(PUSH_PORT_NAME)
         out_port = mido.open_output(PUSH_PORT_NAME)
-        return Ports(in_port=in_port, out_port=out_port)
+        processed_port = mido.open_output(PROCESSED_PORT_NAME, virtual=True)
+        return Ports(in_port=in_port, out_port=out_port, processed_port=processed_port)
 
     def close(self) -> None:
         self.in_port.close()
         self.out_port.close()
+        self.processed_port.close()
+
+
+@dataclass(frozen=True)
+class Color:
+    red: int
+    green: int
+    blue: int
+
+    def __iter__(self) -> Generator[int, None, None]:
+        yield self.red
+        yield self.green
+        yield self.blue
+
+
+@dataclass(frozen=True)
+class Pos:
+    """
+    (0,0) is bottom left corner (lowest note)
+    (7,7) is top right corner (highest note)
+    """
+
+    row: int
+    col: int
+
+    def __iter__(self) -> Generator[int, None, None]:
+        yield self.row
+        yield self.col
+
+    def to_index(self) -> int:
+        return NUM_PAD_COLS * self.row + self.col
+
+    def to_note(self) -> int:
+        return LOW_NOTE + self.to_index()
+
+    @classmethod
+    def from_note(self, note: int) -> 'Pos':
+        if note < LOW_NOTE or note >= HIGH_NOTE:
+            raise Exception(f'Note out of range: {note}')
+        else:
+            index = note - LOW_NOTE
+            row = index // NUM_PAD_COLS
+            col = index % NUM_PAD_COLS
+            return Pos(row=row, col=col)
+
+
+def all_pos() -> Generator[Pos, None, None]:
+    """ Iterator from lowest to highest pos """
+    for row in range(NUM_PAD_ROWS):
+        for col in range(NUM_PAD_COLS):
+            yield Pos(row, col)
+
+
+def frame_sysex(raw_data: List[int]) -> Message:
+    data: List[int] = []
+    data.extend(ABLETON_SYSEX_PREFIX)
+    data.extend(raw_data)
+    return Message('sysex', data=data)
+
+
+# https://github.com/crosslandwa/push-wrapper/blob/master/push.js
+def make_color_message(pos: Pos, color: Color) -> Message:
+    index = pos.to_index()
+    msb = [(x & 240) >> 4 for x in color]
+    lsb = [x & 15 for x in color]
+    raw_data = [4, 0, 8, index, 0, msb[0], lsb[0], msb[1], lsb[1], msb[2], lsb[2]]
+    return frame_sysex(raw_data)
+
+
+def make_led_message(pos: Pos, value: int) -> Message:
+    note = pos.to_note()
+    return Message('note_on', note=note, velocity=value)
 
 
 @contextmanager
@@ -89,9 +171,33 @@ def push_ports_context() -> Generator[Ports, None, None]:
         ports.close()
 
 
+class Push:
+    def __init__(self, ports: Ports) -> None:
+        self._ports = ports
+
+    def reset(self) -> None:
+        black = Color(0, 0, 0)
+        for pos in all_pos():
+            led_message = make_led_message(pos, 0)
+            color_message = make_color_message(pos, black)
+            self._ports.out_port.send(led_message)
+            self._ports.out_port.send(color_message)
+
+
+def handle(ports: Ports) -> None:
+    push = Push(ports)
+    push.reset()
+    for msg in ports.in_port:
+        print(msg)
+        if msg.type == 'note_on':
+            pos = Pos.from_note(msg.note)
+            print(pos)
+        ports.processed_port.send(msg)
+
+
 def main():
     with push_ports_context() as ports:
-        assert ports is not None
+        handle(ports)
 
 
 if __name__ == '__main__':

@@ -53,3 +53,7 @@ isort:
 .PHONY: test-isort
 test-isort:
 	.venv/bin/isort tests
+
+.PHONY: run
+run:
+	.venv/bin/python -m pushlib
