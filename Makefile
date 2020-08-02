@@ -37,18 +37,18 @@ repl:
 
 .PHONY: lint
 lint:
-	.venv/bin/flake8 *.py
+	.venv/bin/flake8 pushpluck
 
 .PHONY: typecheck
 typecheck:
-	.venv/bin/mypy *.py
+	.venv/bin/mypy -p pushpluck
 
 .PHONY: test
 test: lint typecheck
 
 .PHONY: isort
 isort:
-	.venv/bin/isort *.py
+	.venv/bin/isort pushpluck
 
 .PHONY: test-isort
 test-isort:
@@ -56,4 +56,4 @@ test-isort:
 
 .PHONY: run
 run:
-	.venv/bin/python -m pushlib
+	.venv/bin/python -m pushpluck.main

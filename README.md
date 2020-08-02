@@ -1,4 +1,4 @@
-# pushlib
+# pushpluck
 
 Thanks to [push-wrapper](https://github.com/crosslandwa/push-wrapper) (MIT license) for the examples!
 

@@ -3,9 +3,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from mido import Message
 from mido.ports import BaseInput, BaseOutput
-from typing import Dict, Generator, List
+from queue import SimpleQueue
+from typing import Dict, Generator, List, Optional
 
 import mido
+import time
 
 
 BUTTON_TO_CC: Dict[str, int] = {
@@ -79,12 +81,12 @@ class Ports:
     out_port: BaseOutput
     processed_port: BaseOutput
 
-    @staticmethod
-    def open_push_ports() -> 'Ports':
+    @classmethod
+    def open_push_ports(cls) -> 'Ports':
         in_port = mido.open_input(PUSH_PORT_NAME)
         out_port = mido.open_output(PUSH_PORT_NAME)
         processed_port = mido.open_output(PROCESSED_PORT_NAME, virtual=True)
-        return Ports(in_port=in_port, out_port=out_port, processed_port=processed_port)
+        return cls(in_port=in_port, out_port=out_port, processed_port=processed_port)
 
     def close(self) -> None:
         self.in_port.close()
@@ -103,8 +105,35 @@ class Color:
         yield self.green
         yield self.blue
 
+    def to_code(self) -> str:
+        nums = ''.join(f'{x:02x}' for x in self)
+        return f'#{nums.upper()}'
 
-BLACK = Color(0, 0, 0)
+    @classmethod
+    def from_code(cls, code: str) -> 'Color':
+        assert code[0] == '#'
+        red = int(code[1:3], 16)
+        green = int(code[3:5], 16)
+        blue = int(code[5:7], 16)
+        return cls(red, green, blue)
+
+
+def load_colors() -> Dict[str, Color]:
+    with open('colors.txt') as f:
+        val: Optional[Color] = None
+        out: Dict[str, Color] = {}
+        for line in f.readlines():
+            line = line.strip()
+            if val is None:
+                val = Color.from_code(line)
+                assert val.to_code() == line
+            else:
+                out[line] = val
+                val = None
+        return out
+
+
+COLORS = load_colors()
 
 
 @dataclass(frozen=True)
@@ -181,7 +210,35 @@ class Resettable(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class ButtonOutput(Resettable):
+class Closeable(metaclass=ABCMeta):
+    @abstractmethod
+    def close(self) -> None:
+        raise NotImplementedError()
+
+
+class MidiInput(Closeable):
+    @classmethod
+    def open(cls, in_port_name: str) -> 'MidiInput':
+        queue: SimpleQueue[Message] = SimpleQueue()
+        in_port = mido.open_input(in_port_name, callback=queue.put_nowait)
+        return cls(in_port=in_port, queue=queue)
+
+    def __init__(self, in_port: BaseInput, queue: 'SimpleQueue[Message]') -> None:
+        self._in_port = in_port
+        self._queue = queue
+
+    def close(self) -> None:
+        self._in_port.close()
+
+    def recv_message(self) -> Message:
+        return self._queue.get()
+
+
+class MidiOutput(Closeable):
+    pass
+
+
+class PadOutput(Resettable):
     def __init__(self, pos: Pos, out_port: BaseOutput) -> None:
         self._pos = pos
         self._out_port = out_port
@@ -199,28 +256,58 @@ class ButtonOutput(Resettable):
 
     def reset(self) -> None:
         self.led_off()
-        self.set_color(BLACK)
+        self.set_color(COLORS['Black'])
 
 
 class PushOutput(Resettable):
     def __init__(self, out_port: BaseOutput) -> None:
         self._out_port = out_port
 
+    def get_pad(self, pos: Pos) -> PadOutput:
+        return PadOutput(pos, self._out_port)
+
     def reset(self) -> None:
         for pos in all_pos():
-            button = ButtonOutput(pos, self._out_port)
-            button.reset()
+            pad = self.get_pad(pos)
+            pad.reset()
+
+
+def show_guitar(push: PushOutput) -> None:
+    for pos in all_pos():
+        pad = push.get_pad(pos)
+        if pos.row == 0 or pos.row == 7:
+            pad.reset()
+        else:
+            pad.set_color(COLORS['Red'])
+            pad.led_on(127)
+
+
+def rainbow(push: PushOutput) -> None:
+    names = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet']
+    for name in names:
+        color = COLORS[name]
+        for pos in all_pos():
+            pad = push.get_pad(pos)
+            pad.set_color(color)
+            pad.led_on(40)
+            time.sleep(0.01)
+        time.sleep(1)
 
 
 def handle(ports: Ports) -> None:
     push = PushOutput(ports.out_port)
     push.reset()
-    for msg in ports.in_port:
-        print(msg)
-        if msg.type == 'note_on':
-            pos = Pos.from_note(msg.note)
-            print(pos)
-        ports.processed_port.send(msg)
+    try:
+        rainbow(push)
+        show_guitar(push)
+        for msg in ports.in_port:
+            print(msg)
+            if msg.type == 'note_on':
+                pos = Pos.from_note(msg.note)
+                print(pos)
+            ports.processed_port.send(msg)
+    finally:
+        push.reset()
 
 
 def main():
