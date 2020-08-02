@@ -1,97 +1,16 @@
 from abc import ABCMeta, abstractmethod
+from bisect import bisect_left
 from contextlib import contextmanager
 from dataclasses import dataclass
 from mido import Message
 from mido.ports import BaseInput, BaseOutput
+from pushpluck import constants
 from queue import SimpleQueue
 from typing import Dict, Generator, List, Optional
 
+import logging
 import mido
 import time
-
-
-BUTTON_TO_CC: Dict[str, int] = {
-    'TapTempo': 3,
-    'Metronome': 9,
-    'Undo': 119,
-    'Delete': 118,
-    'Double': 117,
-    'Quantize': 116,
-    'FixedLength': 90,
-    'Automation': 89,
-    'Duplicate': 88,
-    'New': 87,
-    'Rec': 86,
-    'Play': 85,
-    'Master': 28,
-    'Stop': 29,
-    'Left': 44,
-    'Right': 45,
-    'Up': 46,
-    'Down': 47,
-    'Volume': 114,
-    'Pan&Send': 115,
-    'Track': 112,
-    'Clip': 113,
-    'Device': 110,
-    'Browse': 111,
-    'StepIn': 62,
-    'StepOut': 63,
-    'Mute': 60,
-    'Solo': 61,
-    'Scales': 58,
-    'User': 59,
-    'Repeat': 56,
-    'Accent': 57,
-    'OctaveDown': 54,
-    'OctaveUp': 55,
-    'AddEffect': 52,
-    'AddTrack': 53,
-    'Note': 50,
-    'Session': 51,
-    'Select': 48,
-    'Shift': 49
-}
-
-TIME_DIV_BUTTON_TO_CC: Dict[str, int] = {
-    '1/4': 36,
-    '1/4t': 37,
-    '1/8': 38,
-    '1/8t': 39,
-    '1/16': 40,
-    '1/16t': 41,
-    '1/32': 42,
-    '1/32t': 43
-}
-
-
-PUSH_PORT_NAME = 'Ableton Push User Port'
-PROCESSED_PORT_NAME = 'Ableton Push Processed Port'
-LOW_NOTE = 36
-NUM_PAD_ROWS = 8
-NUM_PAD_COLS = 8
-NUM_PADS = NUM_PAD_ROWS * NUM_PAD_COLS
-HIGH_NOTE = LOW_NOTE + NUM_PADS
-ABLETON_SYSEX_PREFIX = (71, 127, 21)
-
-
-@dataclass(frozen=True)
-class Ports:
-    in_port: BaseInput
-    out_port: BaseOutput
-    processed_port: BaseOutput
-
-    @classmethod
-    def open_push_ports(cls) -> 'Ports':
-        in_port = mido.open_input(PUSH_PORT_NAME)
-        out_port = mido.open_output(PUSH_PORT_NAME)
-        processed_port = mido.open_output(PROCESSED_PORT_NAME, virtual=True)
-        return cls(in_port=in_port, out_port=out_port, processed_port=processed_port)
-
-    def close(self) -> None:
-        self.in_port.close()
-        self.out_port.close()
-        self.processed_port.close()
 
 
 @dataclass(frozen=True)
@@ -151,38 +70,38 @@ class Pos:
         yield self.col
 
     def to_index(self) -> int:
-        return NUM_PAD_COLS * self.row + self.col
+        return constants.NUM_PAD_COLS * self.row + self.col
 
     def to_note(self) -> int:
-        return LOW_NOTE + self.to_index()
+        return constants.LOW_NOTE + self.to_index()
 
     @classmethod
     def from_note(self, note: int) -> 'Pos':
-        if note < LOW_NOTE or note >= HIGH_NOTE:
+        if note < constants.LOW_NOTE or note >= constants.HIGH_NOTE:
             raise Exception(f'Note out of range: {note}')
         else:
-            index = note - LOW_NOTE
-            row = index // NUM_PAD_COLS
-            col = index % NUM_PAD_COLS
+            index = note - constants.LOW_NOTE
+            row = index // constants.NUM_PAD_COLS
+            col = index % constants.NUM_PAD_COLS
             return Pos(row=row, col=col)
 
 
 def all_pos() -> Generator[Pos, None, None]:
     """ Iterator from lowest to highest pos """
-    for row in range(NUM_PAD_ROWS):
-        for col in range(NUM_PAD_COLS):
+    for row in range(constants.NUM_PAD_ROWS):
+        for col in range(constants.NUM_PAD_COLS):
             yield Pos(row, col)
 
 
 def frame_sysex(raw_data: List[int]) -> Message:
     data: List[int] = []
-    data.extend(ABLETON_SYSEX_PREFIX)
+    data.extend(constants.ABLETON_SYSEX_PREFIX)
     data.extend(raw_data)
     return Message('sysex', data=data)
 
 
 # https://github.com/crosslandwa/push-wrapper/blob/master/push.js
-def make_color_message(pos: Pos, color: Color) -> Message:
+def make_color_msg(pos: Pos, color: Color) -> Message:
     index = pos.to_index()
     msb = [(x & 240) >> 4 for x in color]
     lsb = [x & 15 for x in color]
@@ -190,23 +109,26 @@ def make_color_message(pos: Pos, color: Color) -> Message:
     return frame_sysex(raw_data)
 
 
-def make_led_message(pos: Pos, value: int) -> Message:
+def make_led_msg(pos: Pos, value: int) -> Message:
     note = pos.to_note()
     return Message('note_on', note=note, velocity=value)
-
-
-@contextmanager
-def push_ports_context() -> Generator[Ports, None, None]:
-    ports = Ports.open_push_ports()
-    try:
-        yield ports
-    finally:
-        ports.close()
 
 
 class Resettable(metaclass=ABCMeta):
     @abstractmethod
     def reset(self) -> None:
+        raise NotImplementedError()
+
+
+class MidiSource(metaclass=ABCMeta):
+    @abstractmethod
+    def recv_msg(self) -> Message:
+        raise NotImplementedError()
+
+
+class MidiSink(metaclass=ABCMeta):
+    @abstractmethod
+    def send_msg(self, msg: Message) -> None:
         raise NotImplementedError()
 
 
@@ -216,7 +138,7 @@ class Closeable(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class MidiInput(Closeable):
+class MidiInput(MidiSource, Closeable):
     @classmethod
     def open(cls, in_port_name: str) -> 'MidiInput':
         queue: SimpleQueue[Message] = SimpleQueue()
@@ -230,29 +152,81 @@ class MidiInput(Closeable):
     def close(self) -> None:
         self._in_port.close()
 
-    def recv_message(self) -> Message:
+    def recv_msg(self) -> Message:
         return self._queue.get()
 
 
-class MidiOutput(Closeable):
-    pass
+class MidiOutput(MidiSink, Closeable):
+    @classmethod
+    def open(cls, out_port_name: str, virtual: bool = False, delay: Optional[float] = None) -> 'MidiOutput':
+        out_port = mido.open_output(out_port_name, virtual=virtual)
+        return cls(out_port=out_port, delay=delay)
+
+    def __init__(self, out_port: BaseOutput, delay: Optional[float] = None) -> None:
+        self._out_port = out_port
+        self._delay = delay
+        self._last_sent = 0.0
+
+    def close(self) -> None:
+        self._out_port.close()
+
+    def send_msg(self, msg: Message) -> None:
+        if self._delay is not None:
+            now = time.monotonic()
+            lim = self._last_sent + self._delay
+            diff = lim - now
+            if diff > 0:
+                time.sleep(diff)
+                self._last_sent = lim
+            else:
+                self._last_sent = now
+        print('sending', msg)
+        self._out_port.send(msg)
+
+
+@dataclass(frozen=True)
+class Ports(Closeable):
+    midi_in: BaseInput
+    midi_out: BaseOutput
+    midi_processed: BaseOutput
+
+    @classmethod
+    def open_push_ports(cls, delay: Optional[float] = None) -> 'Ports':
+        midi_in = MidiInput.open(constants.DEFAULT_PUSH_PORT_NAME)
+        midi_out = MidiOutput.open(constants.DEFAULT_PUSH_PORT_NAME, delay=delay)
+        midi_processed = MidiOutput.open(constants.DEFAULT_PROCESSED_PORT_NAME, virtual=True)
+        return cls(midi_in=midi_in, midi_out=midi_out, midi_processed=midi_processed)
+
+    def close(self) -> None:
+        self.midi_in.close()
+        self.midi_out.close()
+        self.midi_processed.close()
+
+
+@contextmanager
+def push_ports_context(delay: Optional[float] = None) -> Generator[Ports, None, None]:
+    ports = Ports.open_push_ports(delay=delay)
+    try:
+        yield ports
+    finally:
+        ports.close()
 
 
 class PadOutput(Resettable):
-    def __init__(self, pos: Pos, out_port: BaseOutput) -> None:
+    def __init__(self, pos: Pos, midi_out: MidiOutput) -> None:
         self._pos = pos
-        self._out_port = out_port
+        self._midi_out = midi_out
 
     def led_on(self, value: int) -> None:
-        message = make_led_message(self._pos, value)
-        self._out_port.send(message)
+        msg = make_led_msg(self._pos, value)
+        self._midi_out.send_msg(msg)
 
     def led_off(self) -> None:
         self.led_on(0)
 
     def set_color(self, color: Color) -> None:
-        message = make_color_message(self._pos, color)
-        self._out_port.send(message)
+        msg = make_color_msg(self._pos, color)
+        self._midi_out.send_msg(msg)
 
     def reset(self) -> None:
         self.led_off()
@@ -260,26 +234,16 @@ class PadOutput(Resettable):
 
 
 class PushOutput(Resettable):
-    def __init__(self, out_port: BaseOutput) -> None:
-        self._out_port = out_port
+    def __init__(self, midi_out: MidiOutput) -> None:
+        self._midi_out = midi_out
 
     def get_pad(self, pos: Pos) -> PadOutput:
-        return PadOutput(pos, self._out_port)
+        return PadOutput(pos, self._midi_out)
 
     def reset(self) -> None:
         for pos in all_pos():
             pad = self.get_pad(pos)
             pad.reset()
-
-
-def show_guitar(push: PushOutput) -> None:
-    for pos in all_pos():
-        pad = push.get_pad(pos)
-        if pos.row == 0 or pos.row == 7:
-            pad.reset()
-        else:
-            pad.set_color(COLORS['Red'])
-            pad.led_on(127)
 
 
 def rainbow(push: PushOutput) -> None:
@@ -294,24 +258,106 @@ def rainbow(push: PushOutput) -> None:
         time.sleep(1)
 
 
+class Guitar(MidiSink, Resettable):
+    def __init__(self, push: PushOutput, midi_processed: MidiOutput, tuning: List[int]) -> None:
+        self._push = push
+        self._midi_processed = midi_processed
+        self._tuning = tuning
+        self._num_strings = len(self._tuning)
+        # TODO handle different number of strings
+        # assert self._num_strings > 0 and self._num_strings <= 8
+        assert self._num_strings == 6
+        self._capo = 0
+        self._fingered: List[List[int]] = [[] for i in range(self._num_strings)]
+
+    def send_msg(self, msg: Message) -> None:
+        if msg.type == 'note_on' or msg.type == 'note_off':
+            pos = Pos.from_note(msg.note)
+            print('pos', pos)
+            if pos.row >= 1 and pos.row <= 6:
+                print('START FINGERED', self._fingered)
+                str_index = pos.row - 1
+                fret = self._capo + pos.col
+                note_on = msg.type == 'note_on' and msg.velocity > 0
+                str_fingered = self._fingered[str_index]
+                last_fret: Optional[int] = str_fingered[-1] if len(str_fingered) > 0 else None
+                fret_index = bisect_left(str_fingered, fret)
+                fret_exists = len(str_fingered) > fret_index and fret_index >= 0 and str_fingered[fret_index] == fret
+                fret_note = constants.STANDARD_TUNING[str_index] + fret
+                if note_on:
+                    print('fret index', fret_index)
+                    if fret_exists:
+                        pass
+                    else:
+                        str_fingered.insert(fret_index, fret)
+                    max_fret = str_fingered[-1]
+                    max_note = constants.STANDARD_TUNING[str_index] + max_fret
+                    if last_fret is not None and max_fret > last_fret:
+                        last_note = constants.STANDARD_TUNING[str_index] + last_fret
+                        off_msg = Message(type='note_on', note=last_note, velocity=0)
+                        self._midi_processed.send_msg(off_msg)
+                    if last_fret is None or max_fret > last_fret:
+                        on_msg = Message(type='note_on', note=max_note, velocity=msg.velocity)
+                        self._midi_processed.send_msg(on_msg)
+                else:
+                    if fret_exists:
+                        del str_fingered[fret_index]
+                    if len(str_fingered) == 0:
+                        off_msg = Message(type='note_on', note=fret_note, velocity=0)
+                        self._midi_processed.send_msg(off_msg)
+                    else:
+                        max_fret = str_fingered[-1]
+                        max_note = constants.STANDARD_TUNING[str_index] + max_fret
+                        assert max_fret != fret
+                        if max_fret < fret:
+                            off_msg = Message(type='note_on', note=fret_note, velocity=0)
+                            self._midi_processed.send_msg(off_msg)
+                            on_msg = Message(type='note_on', note=max_note, velocity=msg.velocity)
+                            self._midi_processed.send_msg(on_msg)
+                print('END FINGERED', self._fingered)
+
+    def reset(self) -> None:
+        # TODO handle different number of strings
+        for pos in all_pos():
+            pad = self._push.get_pad(pos)
+            if pos.row == 0 or pos.row == 7:
+                pad.reset()
+            else:
+                pad.set_color(COLORS['Red'])
+                pad.led_on(127)
+
+
 def handle(ports: Ports) -> None:
-    push = PushOutput(ports.out_port)
+    push = PushOutput(ports.midi_out)
     push.reset()
     try:
-        rainbow(push)
-        show_guitar(push)
-        for msg in ports.in_port:
+        guitar = Guitar(push, ports.midi_processed, tuning=constants.STANDARD_TUNING)
+        guitar.reset()
+        logging.info('guitar ready')
+        while True:
+            msg = ports.midi_in.recv_msg()
             print(msg)
-            if msg.type == 'note_on':
-                pos = Pos.from_note(msg.note)
-                print(pos)
-            ports.processed_port.send(msg)
+            reset = msg.type == 'control_change' and msg.control == constants.ButtonCC.Master.value and msg.value == 0
+            if reset:
+                print('resetting')
+                guitar.reset()
+            else:
+                guitar.send_msg(msg)
     finally:
         push.reset()
 
 
+def configure_logging(log_level: str) -> None:
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)s %(filename)s:%(lineno)d -- %(message)s',
+        level=log_level
+    )
+
+
 def main():
-    with push_ports_context() as ports:
+    configure_logging('INFO')
+    with push_ports_context(delay=constants.DEFAULT_SLEEP_SECS) as ports:
+        logging.info('opened ports')
         handle(ports)
 
 
