@@ -6,7 +6,7 @@ from mido import Message
 from mido.ports import BaseInput, BaseOutput
 from pushpluck import constants
 from queue import SimpleQueue
-from typing import Dict, Generator, List, Optional
+from typing import Dict, Generator, List, Optional, Tuple
 
 import logging
 import mido
@@ -75,15 +75,15 @@ class Pos:
     def to_note(self) -> int:
         return constants.LOW_NOTE + self.to_index()
 
-    @classmethod
-    def from_note(self, note: int) -> 'Pos':
-        if note < constants.LOW_NOTE or note >= constants.HIGH_NOTE:
-            raise Exception(f'Note out of range: {note}')
-        else:
-            index = note - constants.LOW_NOTE
-            row = index // constants.NUM_PAD_COLS
-            col = index % constants.NUM_PAD_COLS
-            return Pos(row=row, col=col)
+
+def pad_from_note(note: int) -> Optional[Pos]:
+    if note < constants.LOW_NOTE or note >= constants.HIGH_NOTE:
+        return None
+    else:
+        index = note - constants.LOW_NOTE
+        row = index // constants.NUM_PAD_COLS
+        col = index % constants.NUM_PAD_COLS
+        return Pos(row=row, col=col)
 
 
 def all_pos() -> Generator[Pos, None, None]:
@@ -180,7 +180,6 @@ class MidiOutput(MidiSink, Closeable):
                 self._last_sent = lim
             else:
                 self._last_sent = now
-        print('sending', msg)
         self._out_port.send(msg)
 
 
@@ -205,11 +204,15 @@ class Ports(Closeable):
 
 @contextmanager
 def push_ports_context(delay: Optional[float] = None) -> Generator[Ports, None, None]:
+    logging.info('opening ports')
     ports = Ports.open_push_ports(delay=delay)
+    logging.info('opened ports')
     try:
         yield ports
     finally:
+        logging.info('closing ports')
         ports.close()
+        logging.info('closed ports')
 
 
 class PadOutput(Resettable):
@@ -258,66 +261,153 @@ def rainbow(push: PushOutput) -> None:
         time.sleep(1)
 
 
-class Guitar(MidiSink, Resettable):
-    def __init__(self, push: PushOutput, midi_processed: MidiOutput, tuning: List[int]) -> None:
+@dataclass
+class NoteInfo:
+    velocity: int
+    polytouch: Optional[int]
+
+    @classmethod
+    def pluck(cls, velocity: int) -> 'NoteInfo':
+        return cls(velocity=velocity, polytouch=None)
+
+
+@dataclass
+class ChokeGroup:
+    note_order: List[int]
+    note_info: Dict[int, NoteInfo]
+
+    @classmethod
+    def empty(cls) -> 'ChokeGroup':
+        return cls(note_order=[], note_info={})
+
+    def max_note_and_info(self) -> Optional[Tuple[int, NoteInfo]]:
+        max_note = self.note_order[-1] if len(self.note_order) > 0 else None
+        return (max_note, self.note_info[max_note]) if max_note is not None else None
+
+    def pluck(self, note: int, velocity: int):
+        note_index = bisect_left(self.note_order, note)
+        note_exists = len(self.note_order) > note_index and note_index >= 0 and self.note_order[note_index] == note
+        if velocity > 0:
+            if not note_exists:
+                self.note_order.insert(note_index, note)
+            self.note_info[note] = NoteInfo.pluck(velocity)
+        else:
+            if note_exists:
+                del self.note_order[note_index]
+            if note in self.note_info:
+                del self.note_info[note]
+
+
+class Fretboard:
+    def __init__(self, tuning: List[int]) -> None:
+        self._tuning = tuning
+        self._capo_semitones = 0
+        num_strings = len(self._tuning)
+        self._fingered: List[ChokeGroup] = \
+            [ChokeGroup.empty() for i in range(num_strings)]
+
+    def _get_note(self, str_index: int, pre_fret: int) -> int:
+        return self._tuning[str_index] + self._capo_semitones + pre_fret
+
+    def shift_capo(self, semitones: int) -> None:
+        self._capo_semitones += semitones
+
+    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[Message]:
+        # Find out note from fret
+        fret_note = self._get_note(str_index, pre_fret)
+
+        # Lookup choke group and find prev max note
+        group = self._fingered[str_index]
+        prev_note_and_info = group.max_note_and_info()
+
+        # Add note to group and find cur max note
+        group.pluck(fret_note, velocity)
+        cur_note_and_info = group.max_note_and_info()
+
+        # Return control messages
+        out_msgs: List[Message] = []
+        if cur_note_and_info is None:
+            if prev_note_and_info is None:
+                # No notes - huh? (ignore)
+                pass
+            else:
+                # Single note mute - send off for prev
+                prev_note, _ = prev_note_and_info
+                off_msg = Message(type='note_on', note=prev_note, velocity=0)
+                out_msgs.append(off_msg)
+        else:
+            cur_note, cur_info = cur_note_and_info
+            if prev_note_and_info is None:
+                # Single note pluck - send on for cur
+                on_msg = Message(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                out_msgs.append(on_msg)
+            else:
+                prev_note, _ = prev_note_and_info
+                if prev_note == cur_note:
+                    # Movement above fretted string (ignore)
+                    pass
+                else:
+                    # Hammer-on or pull-off
+                    # Send on before off to maintain overlap for envelopes?
+                    on_msg = Message(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                    out_msgs.append(on_msg)
+                    off_msg = Message(type='note_on', note=prev_note, velocity=0)
+                    out_msgs.append(off_msg)
+        return out_msgs
+
+    def handle_reset(self) -> List[Message]:
+        out_msgs: List[Message] = []
+        for str_index, group in enumerate(self._fingered):
+            cur_note_and_info = group.max_note_and_info()
+            if cur_note_and_info is not None:
+                cur_note, _ = cur_note_and_info
+                off_msg = Message(type='note_on', note=cur_note, velocity=0)
+                out_msgs.append(off_msg)
+        self._fingered = [ChokeGroup.empty() for i in range(len(self._tuning))]
+        return out_msgs
+
+
+@dataclass(frozen=True)
+class Profile:
+    instrument_name: str
+    tuning_name: str
+    tuning: List[int]
+
+
+class Plucked(MidiSink, Resettable):
+    def __init__(
+        self,
+        push: PushOutput,
+        midi_processed: MidiOutput,
+        profile: Profile,
+    ) -> None:
         self._push = push
         self._midi_processed = midi_processed
-        self._tuning = tuning
-        self._num_strings = len(self._tuning)
-        # TODO handle different number of strings
-        # assert self._num_strings > 0 and self._num_strings <= 8
-        assert self._num_strings == 6
-        self._capo = 0
-        self._fingered: List[List[int]] = [[] for i in range(self._num_strings)]
+        self._fretboard = Fretboard(profile.tuning)
 
     def send_msg(self, msg: Message) -> None:
         if msg.type == 'note_on' or msg.type == 'note_off':
-            pos = Pos.from_note(msg.note)
-            print('pos', pos)
-            if pos.row >= 1 and pos.row <= 6:
-                print('START FINGERED', self._fingered)
+            pos = pad_from_note(msg.note)
+            if pos is not None and pos.row >= 1 and pos.row <= 6:
                 str_index = pos.row - 1
-                fret = self._capo + pos.col
-                note_on = msg.type == 'note_on' and msg.velocity > 0
-                str_fingered = self._fingered[str_index]
-                last_fret: Optional[int] = str_fingered[-1] if len(str_fingered) > 0 else None
-                fret_index = bisect_left(str_fingered, fret)
-                fret_exists = len(str_fingered) > fret_index and fret_index >= 0 and str_fingered[fret_index] == fret
-                fret_note = constants.STANDARD_TUNING[str_index] + fret
-                if note_on:
-                    print('fret index', fret_index)
-                    if fret_exists:
-                        pass
-                    else:
-                        str_fingered.insert(fret_index, fret)
-                    max_fret = str_fingered[-1]
-                    max_note = constants.STANDARD_TUNING[str_index] + max_fret
-                    if last_fret is not None and max_fret > last_fret:
-                        last_note = constants.STANDARD_TUNING[str_index] + last_fret
-                        off_msg = Message(type='note_on', note=last_note, velocity=0)
-                        self._midi_processed.send_msg(off_msg)
-                    if last_fret is None or max_fret > last_fret:
-                        on_msg = Message(type='note_on', note=max_note, velocity=msg.velocity)
-                        self._midi_processed.send_msg(on_msg)
-                else:
-                    if fret_exists:
-                        del str_fingered[fret_index]
-                    if len(str_fingered) == 0:
-                        off_msg = Message(type='note_on', note=fret_note, velocity=0)
-                        self._midi_processed.send_msg(off_msg)
-                    else:
-                        max_fret = str_fingered[-1]
-                        max_note = constants.STANDARD_TUNING[str_index] + max_fret
-                        assert max_fret != fret
-                        if max_fret < fret:
-                            off_msg = Message(type='note_on', note=fret_note, velocity=0)
-                            self._midi_processed.send_msg(off_msg)
-                            on_msg = Message(type='note_on', note=max_note, velocity=msg.velocity)
-                            self._midi_processed.send_msg(on_msg)
-                print('END FINGERED', self._fingered)
+                processed_msgs = self._fretboard.handle_note(str_index, pos.col, msg.velocity)
+                for processed_msg in processed_msgs:
+                    self._midi_processed.send_msg(processed_msg)
+        elif msg.type == 'polytouch':
+            # TODO send polytouch
+            # pos = pad_from_note(msg.note)
+            pass
 
     def reset(self) -> None:
+        # Send note offs
+        logging.info('plucked sending note offs')
+        note_offs = self._fretboard.handle_reset()
+        for note_off in note_offs:
+            self._midi_processed.send_msg(note_off)
+
+        # Update UI
         # TODO handle different number of strings
+        logging.info('plucked resetting ui')
         for pos in all_pos():
             pad = self._push.get_pad(pos)
             if pos.row == 0 or pos.row == 7:
@@ -327,23 +417,52 @@ class Guitar(MidiSink, Resettable):
                 pad.led_on(127)
 
 
+class Controller(MidiSink, Resettable):
+    def __init__(
+        self,
+        push: PushOutput,
+        midi_processed: MidiOutput,
+        profile: Profile
+    ) -> None:
+        self._push = push
+        self._midi_processed = midi_processed
+        self._plucked = Plucked(self._push, self._midi_processed, profile)
+
+    def send_msg(self, msg: Message) -> None:
+        reset = msg.type == 'control_change' \
+                and msg.control == constants.ButtonCC.Master.value \
+                and msg.value == 0
+        if reset:
+            self.reset()
+        else:
+            self._plucked.send_msg(msg)
+
+    def reset(self):
+        logging.info('controller resetting')
+        self._plucked.reset()
+
+
 def handle(ports: Ports) -> None:
+    profile = Profile(
+        instrument_name='Guitar',
+        tuning_name='Standard',
+        tuning=constants.STANDARD_TUNING
+    )
     push = PushOutput(ports.midi_out)
+    # Start with a clean slate
+    logging.info('resetting push')
     push.reset()
     try:
-        guitar = Guitar(push, ports.midi_processed, tuning=constants.STANDARD_TUNING)
-        guitar.reset()
-        logging.info('guitar ready')
+        controller = Controller(push, ports.midi_processed, profile)
+        logging.info('resetting controller')
+        controller.reset()
+        logging.info('controller ready')
         while True:
             msg = ports.midi_in.recv_msg()
-            print(msg)
-            reset = msg.type == 'control_change' and msg.control == constants.ButtonCC.Master.value and msg.value == 0
-            if reset:
-                print('resetting')
-                guitar.reset()
-            else:
-                guitar.send_msg(msg)
+            controller.send_msg(msg)
     finally:
+        # End with a clean slate
+        logging.info('final reset of push')
         push.reset()
 
 
@@ -357,8 +476,8 @@ def configure_logging(log_level: str) -> None:
 def main():
     configure_logging('INFO')
     with push_ports_context(delay=constants.DEFAULT_SLEEP_SECS) as ports:
-        logging.info('opened ports')
         handle(ports)
+    logging.info('done')
 
 
 if __name__ == '__main__':
