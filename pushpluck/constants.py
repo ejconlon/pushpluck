@@ -1,7 +1,6 @@
 from enum import Enum, unique
 from typing import Dict, Type, TypeVar
 
-
 E = TypeVar('E', bound=Enum)
 
 
