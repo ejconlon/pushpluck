@@ -14,7 +14,7 @@ def make_enum_value_lookup(enum_type: Type[E]) -> Dict[int, E]:
 
 # How long to sleep between midi output messages
 # so we don't flood the push
-DEFAULT_SLEEP_SECS = 0.001
+DEFAULT_SLEEP_SECS = 0.0008
 
 
 @unique
@@ -80,5 +80,6 @@ NUM_PAD_COLS = 8
 NUM_PADS = NUM_PAD_ROWS * NUM_PAD_COLS
 HIGH_NOTE = LOW_NOTE + NUM_PADS
 ABLETON_SYSEX_PREFIX = (71, 127, 21)
+MAX_LINE_LEN = 68
 
 STANDARD_TUNING = [40, 45, 50, 55, 59, 64]

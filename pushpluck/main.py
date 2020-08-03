@@ -114,6 +114,16 @@ def make_led_msg(pos: Pos, value: int) -> Message:
     return Message('note_on', note=note, velocity=value)
 
 
+def make_lcd_msg(row: int, offset: int, text: str) -> Message:
+    #   const lcdSegmentSysex = (x, y, data) =>
+    # sendSysex([27 - y, 0, 9, lcdOffsets[x], ...eigthCharLcdData(data)]
+    # clearLCD: () => { [27, 26, 25, 24].forEach(row => { sendSysex([row, 0, 69, 0, ...new Array(68).fill(32)]) }) },
+    raw_data = [27 - row, 0, len(text) + 1, offset]
+    for c in text:
+        raw_data.append(ord(c))
+    return frame_sysex(raw_data)
+
+
 class Resettable(metaclass=ABCMeta):
     @abstractmethod
     def reset(self) -> None:
@@ -242,6 +252,11 @@ class PushOutput(Resettable):
 
     def get_pad(self, pos: Pos) -> PadOutput:
         return PadOutput(pos, self._midi_out)
+
+    def display_lcd(self, row: int, offset: int, text: str) -> None:
+        assert len(text) + offset <= constants.MAX_LINE_LEN
+        msg = make_lcd_msg(row, 0, text)
+        self._midi_out.send_msg(msg)
 
     def reset(self) -> None:
         for pos in all_pos():
@@ -439,10 +454,13 @@ class Controller(MidiSink, Resettable):
 
     def reset(self):
         logging.info('controller resetting')
+        for row in range(4):
+            text = f'{row} - 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+            self._push.display_lcd(row, 0, text)
         self._plucked.reset()
 
 
-def handle(ports: Ports) -> None:
+def main_with_ports(ports: Ports) -> None:
     profile = Profile(
         instrument_name='Guitar',
         tuning_name='Standard',
@@ -476,7 +494,7 @@ def configure_logging(log_level: str) -> None:
 def main():
     configure_logging('INFO')
     with push_ports_context(delay=constants.DEFAULT_SLEEP_SECS) as ports:
-        handle(ports)
+        main_with_ports(ports)
     logging.info('done')
 
 
