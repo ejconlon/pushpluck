@@ -225,6 +225,35 @@ def push_ports_context(delay: Optional[float] = None) -> Generator[Ports, None, 
         logging.info('closed ports')
 
 
+class LcdOutput(Resettable):
+    def __init__(self, midi_out: MidiOutput) -> None:
+        self._midi_out = midi_out
+
+    def display_line(self, row: int, text: str) -> None:
+        text = text.ljust(constants.DISPLAY_MAX_LINE_LEN, ' ')
+        self.display_raw(row, 0, text)
+
+    def display_raw(self, row: int, line_col: int, text: str) -> None:
+        assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
+        assert line_col >= 0
+        assert len(text) + line_col <= constants.DISPLAY_MAX_LINE_LEN
+        msg = make_lcd_msg(row, line_col, text)
+        self._midi_out.send_msg(msg)
+
+    def display_block(self, row: int, block_col: int, text: str) -> None:
+        assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
+        assert block_col >= 0 and block_col < constants.DISPLAY_MAX_BLOCKS
+        assert len(text) <= constants.DISPLAY_BLOCK_LEN
+        text = text.ljust(constants.DISPLAY_BLOCK_LEN, ' ')
+        line_col = constants.DISPLAY_BLOCK_LEN * block_col
+        msg = make_lcd_msg(row, line_col, text)
+        self._midi_out.send_msg(msg)
+
+    def reset(self):
+        for row in range(constants.DISPLAY_MAX_ROWS):
+            self.display_line(row, '')
+
+
 class PadOutput(Resettable):
     def __init__(self, pos: Pos, midi_out: MidiOutput) -> None:
         self._pos = pos
@@ -253,12 +282,15 @@ class PushOutput(Resettable):
     def get_pad(self, pos: Pos) -> PadOutput:
         return PadOutput(pos, self._midi_out)
 
-    def display_lcd(self, row: int, offset: int, text: str) -> None:
-        assert len(text) + offset <= constants.MAX_LINE_LEN
-        msg = make_lcd_msg(row, 0, text)
-        self._midi_out.send_msg(msg)
+    def get_lcd(self) -> LcdOutput:
+        return LcdOutput(self._midi_out)
 
     def reset(self) -> None:
+        logging.info('resetting push display')
+        lcd = self.get_lcd()
+        lcd.reset()
+
+        logging.info('resetting push pads')
         for pos in all_pos():
             pad = self.get_pad(pos)
             pad.reset()
@@ -453,10 +485,13 @@ class Controller(MidiSink, Resettable):
             self._plucked.send_msg(msg)
 
     def reset(self):
-        logging.info('controller resetting')
-        for row in range(4):
-            text = f'{row} - 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-            self._push.display_lcd(row, 0, text)
+        logging.info('resetting controller lcd')
+        lcd = self._push.get_lcd()
+        for row in range(constants.DISPLAY_MAX_ROWS):
+            for block_col in range(constants.DISPLAY_MAX_BLOCKS):
+                lcd.display_block(row, block_col, '0123456789ABCDEF!')
+
+        logging.info('resetting controller plucked')
         self._plucked.reset()
 
 
