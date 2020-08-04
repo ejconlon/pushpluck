@@ -4,7 +4,7 @@ UNDER CONSTRUCTION
 
 A "plucked-string" controller for the User Mode of the Ableton Push 1.
 
-This program reads and writes to the user midi ports of the Push and emits a stream of derived midi notes and controls to a virtual midi port. Typically you will have to start this manually from the terminal with your Push connected. You don't need Live running, but if it is, be aware that you will have to manually press the `User` button to enter User Mode, and possibly press the `Master` button to refresh the display.
+This program reads and writes to the user midi ports of the Push and emits a stream of derived midi notes and controls to a virtual midi port. Typically you will have to start this manually from the system terminal with your Push connected. You don't need Live running (or even installed), but if it is, be aware that you will have to manually press the `User` button to enter User Mode, and possibly press the `Master` button to refresh the display.
 
 ## Installation and Execution
 
