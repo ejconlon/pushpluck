@@ -56,4 +56,4 @@ test-isort:
 
 .PHONY: run
 run:
-	.venv/bin/python -m pushpluck.main
+	./run.sh

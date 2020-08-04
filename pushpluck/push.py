@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
-from mido import Message
+from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Closeable, Resettable
 from pushpluck.midi import MidiInput, MidiOutput
@@ -102,14 +102,14 @@ def all_pos() -> Generator[Pos, None, None]:
             yield Pos(row, col)
 
 
-def frame_sysex(raw_data: List[int]) -> Message:
+def frame_sysex(raw_data: List[int]) -> FrozenMessage:
     data: List[int] = []
-    data.extend(constants.ABLETON_SYSEX_PREFIX)
+    data.extend(constants.PUSH_SYSEX_PREFIX)
     data.extend(raw_data)
-    return Message('sysex', data=data)
+    return FrozenMessage('sysex', data=data)
 
 
-def make_color_msg(pos: Pos, color: Color) -> Message:
+def make_color_msg(pos: Pos, color: Color) -> FrozenMessage:
     index = pos.to_index()
     msb = [(x & 240) >> 4 for x in color]
     lsb = [x & 15 for x in color]
@@ -117,12 +117,12 @@ def make_color_msg(pos: Pos, color: Color) -> Message:
     return frame_sysex(raw_data)
 
 
-def make_led_msg(pos: Pos, value: int) -> Message:
+def make_led_msg(pos: Pos, value: int) -> FrozenMessage:
     note = pos.to_note()
-    return Message('note_on', note=note, velocity=value)
+    return FrozenMessage('note_on', note=note, velocity=value)
 
 
-def make_lcd_msg(row: int, offset: int, text: str) -> Message:
+def make_lcd_msg(row: int, offset: int, text: str) -> FrozenMessage:
     raw_data = [27 - row, 0, len(text) + 1, offset]
     for c in text:
         raw_data.append(ord(c))
@@ -136,10 +136,15 @@ class PushPorts(Closeable):
     midi_processed: MidiOutput
 
     @classmethod
-    def open_push_ports(cls, delay: Optional[float] = None) -> 'PushPorts':
-        midi_in = MidiInput.open(constants.DEFAULT_PUSH_PORT_NAME)
-        midi_out = MidiOutput.open(constants.DEFAULT_PUSH_PORT_NAME, delay=delay)
-        midi_processed = MidiOutput.open(constants.DEFAULT_PROCESSED_PORT_NAME, virtual=True)
+    def open(
+        cls,
+        push_port_name: str,
+        processed_port_name: str,
+        delay: Optional[float]
+    ) -> 'PushPorts':
+        midi_in = MidiInput.open(push_port_name)
+        midi_out = MidiOutput.open(push_port_name, delay=delay)
+        midi_processed = MidiOutput.open(processed_port_name, virtual=True)
         return cls(midi_in=midi_in, midi_out=midi_out, midi_processed=midi_processed)
 
     def close(self) -> None:
@@ -149,9 +154,17 @@ class PushPorts(Closeable):
 
 
 @contextmanager
-def push_ports_context(delay: Optional[float] = None) -> Generator[PushPorts, None, None]:
+def push_ports_context(
+    push_port_name: str,
+    processed_port_name: str,
+    delay: Optional[float]
+) -> Generator[PushPorts, None, None]:
     logging.info('opening ports')
-    ports = PushPorts.open_push_ports(delay=delay)
+    ports = PushPorts.open(
+        push_port_name=push_port_name,
+        processed_port_name=processed_port_name,
+        delay=delay
+    )
     logging.info('opened ports')
     try:
         yield ports

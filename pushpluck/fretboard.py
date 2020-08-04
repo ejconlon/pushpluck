@@ -1,6 +1,6 @@
 from bisect import bisect_left
 from dataclasses import dataclass
-from mido import Message
+from mido.frozen import FrozenMessage
 from typing import Dict, List, Optional, Tuple
 
 
@@ -55,7 +55,7 @@ class Fretboard:
     def shift_capo(self, semitones: int) -> None:
         self._capo_semitones += semitones
 
-    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[Message]:
+    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[FrozenMessage]:
         # Find out note from fret
         fret_note = self._get_note(str_index, pre_fret)
 
@@ -68,7 +68,7 @@ class Fretboard:
         cur_note_and_info = group.max_note_and_info()
 
         # Return control messages
-        out_msgs: List[Message] = []
+        out_msgs: List[FrozenMessage] = []
         if cur_note_and_info is None:
             if prev_note_and_info is None:
                 # No notes - huh? (ignore)
@@ -76,13 +76,13 @@ class Fretboard:
             else:
                 # Single note mute - send off for prev
                 prev_note, _ = prev_note_and_info
-                off_msg = Message(type='note_on', note=prev_note, velocity=0)
+                off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
                 out_msgs.append(off_msg)
         else:
             cur_note, cur_info = cur_note_and_info
             if prev_note_and_info is None:
                 # Single note pluck - send on for cur
-                on_msg = Message(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
                 out_msgs.append(on_msg)
             else:
                 prev_note, _ = prev_note_and_info
@@ -92,19 +92,19 @@ class Fretboard:
                 else:
                     # Hammer-on or pull-off
                     # Send on before off to maintain overlap for envelopes?
-                    on_msg = Message(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                    on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
                     out_msgs.append(on_msg)
-                    off_msg = Message(type='note_on', note=prev_note, velocity=0)
+                    off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
                     out_msgs.append(off_msg)
         return out_msgs
 
-    def handle_reset(self) -> List[Message]:
-        out_msgs: List[Message] = []
+    def handle_reset(self) -> List[FrozenMessage]:
+        out_msgs: List[FrozenMessage] = []
         for str_index, group in enumerate(self._fingered):
             cur_note_and_info = group.max_note_and_info()
             if cur_note_and_info is not None:
                 cur_note, _ = cur_note_and_info
-                off_msg = Message(type='note_on', note=cur_note, velocity=0)
+                off_msg = FrozenMessage(type='note_on', note=cur_note, velocity=0)
                 out_msgs.append(off_msg)
         self._fingered = [ChokeGroup.empty() for i in range(len(self._tuning))]
         return out_msgs

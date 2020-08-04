@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from mido import Message
+from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.fretboard import Fretboard
@@ -28,7 +28,7 @@ class Plucked(MidiSink, Resettable):
         self._midi_processed = midi_processed
         self._fretboard = Fretboard(profile.tuning)
 
-    def send_msg(self, msg: Message) -> None:
+    def send_msg(self, msg: FrozenMessage) -> None:
         if msg.type == 'note_on' or msg.type == 'note_off':
             pos = pad_from_note(msg.note)
             if pos is not None and pos.row >= 1 and pos.row <= 6:
@@ -71,7 +71,7 @@ class Controller(MidiSink, Resettable):
         self._midi_processed = midi_processed
         self._plucked = Plucked(self._push, self._midi_processed, profile)
 
-    def send_msg(self, msg: Message) -> None:
+    def send_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
                 and msg.control == constants.ButtonCC.Master.value \
                 and msg.value == 0
