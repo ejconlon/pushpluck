@@ -17,6 +17,7 @@ pipclean:
 .PHONY: pipcompile
 pipcompile:
 	$(PYTHON) -m piptools compile requirements.in
+	$(PYTHON) -m piptools compile dev-requirements.in
 
 .PHONY: newvenv
 newvenv:
@@ -26,7 +27,7 @@ newvenv:
 .PHONY: revenv
 revenv:
 	mkdir -p .pipcache
-	.venv/bin/pip install --cache-dir .pipcache -r requirements.txt
+	.venv/bin/pip install --cache-dir .pipcache -r dev-requirements.txt
 
 .PHONY: venv
 venv: newvenv revenv

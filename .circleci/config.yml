@@ -1,0 +1,58 @@
+version: 2.1
+
+parameters:
+  cachever:
+    type: string
+    default: "v1"
+  pyver:
+    type: string
+    default: "3.8.3"
+  pyenv:
+    type: string
+    default: "c5475539c464fa167406d7103ca92f09a5445ddb"
+
+executors:
+  buster:
+    docker:
+      - image: debian:buster
+
+jobs:
+  build:
+    executor: buster
+    steps:
+      - checkout
+      - run:
+          name: Install apt
+          command: "apt-get update && apt-get install -y $(cat .circleci/packages.txt) && update-ca-certificates"
+      - restore_cache:
+          name: Restore pyenv
+          keys:
+            - << pipeline.parameters.cachever >>-pyenv-<< pipeline.parameters.pyenv >>
+      - run:
+          name: Install pyenv
+          command: "if [ ! -d /root/.pyenv ]; then curl -L https://github.com/pyenv/pyenv-installer/raw/<< pipeline.parameters.pyenv >>/bin/pyenv-installer | bash && PATH=/root/.pyenv/bin:${PATH} pyenv install << pipeline.parameters.pyver >>; fi"
+      - save_cache:
+          name: Save pyenv
+          key: << pipeline.parameters.cachever >>-pyenv-<< pipeline.parameters.pyenv >>
+          paths:
+            - /root/.pyenv
+      - restore_cache:
+          name: Restore venv
+          keys:
+            - << pipeline.parameters.cachever >>-venv-{{ checksum "dev-requirements.txt" }}
+      - run:
+          name: Install
+          command: "if [ ! -d /root/project/.venv ]; then PATH=/root/.pyenv/bin:${PATH} make venv; fi"
+      - save_cache:
+          name: Save venv
+          key: << pipeline.parameters.cachever >>-venv-{{ checksum "dev-requirements.txt" }}
+          paths:
+            - /root/project/.venv
+      - run:
+          name: Test
+          command: PATH=/root/.pyenv/bin:${PATH} make test
+
+workflows:
+  main:
+    jobs:
+      - build

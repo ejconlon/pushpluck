@@ -4,41 +4,5 @@
 #
 #    pip-compile requirements.in
 #
-appnope==0.1.0            # via ipython
-attrs==19.3.0             # via pytest
-backcall==0.2.0           # via ipython
-decorator==4.4.2          # via ipython, traitlets
-flake8==3.8.3             # via -r requirements.in
-iniconfig==1.0.1          # via pytest
-ipython-genutils==0.2.0   # via traitlets
-ipython==7.16.1           # via -r requirements.in
-isort==5.2.2              # via -r requirements.in
-jedi==0.17.2              # via ipython
-mccabe==0.6.1             # via flake8
 mido==1.2.9               # via -r requirements.in
-more-itertools==8.4.0     # via pytest
-mypy-extensions==0.4.3    # via mypy
-mypy==0.782               # via -r requirements.in
-packaging==20.4           # via pytest
-parso==0.7.1              # via jedi
-pexpect==4.8.0            # via ipython
-pickleshare==0.7.5        # via ipython
-pluggy==0.13.1            # via pytest
-prompt-toolkit==3.0.5     # via ipython
-ptyprocess==0.6.0         # via pexpect
-py==1.9.0                 # via pytest
-pycodestyle==2.6.0        # via flake8
-pyflakes==2.2.0           # via flake8
-pygments==2.6.1           # via ipython
-pyparsing==2.4.7          # via packaging
-pytest==6.0.1             # via -r requirements.in
 python-rtmidi==1.4.2      # via -r requirements.in
-six==1.15.0               # via packaging, traitlets
-toml==0.10.1              # via pytest
-traitlets==4.3.3          # via ipython
-typed-ast==1.4.1          # via mypy
-typing-extensions==3.7.4.2  # via mypy
-wcwidth==0.2.5            # via prompt-toolkit
-
-# The following packages are considered to be unsafe in a requirements file:
-# setuptools

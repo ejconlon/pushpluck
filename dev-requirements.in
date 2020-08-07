@@ -1,0 +1,9 @@
+# Dev requirements
+flake8
+ipython
+isort
+mypy
+pytest
+
+# Inherited app requirements
+-r requirements.txt

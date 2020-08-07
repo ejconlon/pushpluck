@@ -1,0 +1,1 @@
+locales ca-certificates sudo make git curl zip unzip gcc g++ libssl-dev libbz2-dev zlib1g-dev libffi-dev uuid-dev libyaml-dev libreadline-dev libsqlite3-dev
