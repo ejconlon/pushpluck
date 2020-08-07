@@ -11,6 +11,14 @@ import mido
 import time
 
 
+def is_note_msg(msg: FrozenMessage) -> bool:
+    return msg.type == 'note_on' or msg.type == 'note_off'
+
+
+def is_note_on_msg(msg: FrozenMessage) -> bool:
+    return msg.type == 'note_on' and msg.velocity > 0
+
+
 class MidiSource(metaclass=ABCMeta):
     @abstractmethod
     def recv_msg(self) -> FrozenMessage:

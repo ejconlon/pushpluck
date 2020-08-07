@@ -4,7 +4,7 @@ from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.fretboard import Fretboard
 from pushpluck.push import PushOutput, all_pos, get_color, pad_from_note
-from pushpluck.midi import MidiSink
+from pushpluck.midi import MidiSink, is_note_msg
 from typing import List
 
 import logging
@@ -29,7 +29,7 @@ class Plucked(MidiSink, Resettable):
         self._fretboard = Fretboard(profile.tuning)
 
     def send_msg(self, msg: FrozenMessage) -> None:
-        if msg.type == 'note_on' or msg.type == 'note_off':
+        if is_note_msg(msg):
             pos = pad_from_note(msg.note)
             if pos is not None and pos.row >= 1 and pos.row <= 6:
                 str_index = pos.row - 1
