@@ -60,12 +60,13 @@ class FretMessage:
 
 
 class Fretboard:
-    def __init__(self, tuning: List[int]) -> None:
+    def __init__(self, tuning: List[int], min_velocity: int) -> None:
         self._tuning = tuning
         self._semitones = 0
         num_strings = len(self._tuning)
         self._fingered: List[ChokeGroup] = \
             [ChokeGroup.empty() for i in range(num_strings)]
+        self._min_velocity = min_velocity
 
     def _get_note(self, str_index: int, pre_fret: int) -> int:
         return self._tuning[str_index] + self._semitones + pre_fret
@@ -81,6 +82,12 @@ class Fretboard:
             pre_fret=self._get_pre_fret(str_index, msg.note),
             msg=msg
         )
+
+    def _clamp_velocity(self, velocity: int):
+        if velocity == 0:
+            return 0
+        else:
+            return max(velocity, self._min_velocity)
 
     def shift_semitones(self, diff: int) -> None:
         self._semitones += diff
@@ -112,7 +119,8 @@ class Fretboard:
             cur_note, cur_info = cur_note_and_info
             if prev_note_and_info is None:
                 # Single note pluck - send on for cur
-                on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                velocity = self._clamp_velocity(cur_info.velocity)
+                on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
                 out_msgs.append(self._emit_fret_msg(str_index, on_msg))
             else:
                 prev_note, _ = prev_note_and_info
@@ -122,7 +130,8 @@ class Fretboard:
                 else:
                     # Hammer-on or pull-off
                     # Send on before off to maintain overlap for envelopes?
-                    on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
+                    velocity = self._clamp_velocity(cur_info.velocity)
+                    on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
                     out_msgs.append(self._emit_fret_msg(str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
                     out_msgs.append(self._emit_fret_msg(str_index, off_msg))

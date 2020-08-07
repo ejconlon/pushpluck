@@ -2,22 +2,25 @@ from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.controller import Controller, Profile
 from pushpluck.push import PushOutput, PushPorts, cache_colors, push_ports_context
+from pushpluck.scale import NoteName, major_scale
 
 import logging
 
 
-def main_with_ports(ports: PushPorts) -> None:
+def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
     profile = Profile(
         instrument_name='Guitar',
         tuning_name='Standard',
         tuning=constants.STANDARD_TUNING
     )
+    scale = major_scale(NoteName.C)
+    scale.check()
     push = PushOutput(ports.midi_out)
     # Start with a clean slate
     logging.info('resetting push')
     push.reset()
     try:
-        controller = Controller(push, ports.midi_processed, profile)
+        controller = Controller(push, ports.midi_processed, min_velocity, profile, scale)
         logging.info('resetting controller')
         controller.reset()
         logging.info('controller ready')
@@ -36,6 +39,7 @@ def make_parser() -> ArgumentParser:
     parser.add_argument('--push-delay', type=float, default=constants.DEFAULT_PUSH_DELAY)
     parser.add_argument('--push-port', default=constants.DEFAULT_PUSH_PORT_NAME)
     parser.add_argument('--processed-port', default=constants.DEFAULT_PROCESSED_PORT_NAME)
+    parser.add_argument('--min-velocity', type=int, default=0)
     return parser
 
 
@@ -56,7 +60,7 @@ def main():
         processed_port_name=args.processed_port,
         delay=args.push_delay
     ) as ports:
-        main_with_ports(ports)
+        main_with_ports(ports, args.min_velocity)
     logging.info('done')
 
 

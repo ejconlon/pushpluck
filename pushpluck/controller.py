@@ -5,6 +5,7 @@ from pushpluck.base import Resettable
 from pushpluck.fretboard import Fretboard
 from pushpluck.push import Color, Pos, PushOutput, all_pos, get_color, pad_from_note
 from pushpluck.midi import MidiSink, is_note_msg, is_note_on_msg
+from pushpluck.scale import Scale
 from typing import List, Optional
 
 import logging
@@ -22,11 +23,14 @@ class Plucked(MidiSink, Resettable):
         self,
         push: PushOutput,
         midi_processed: MidiSink,
+        min_velocity: int,
         profile: Profile,
+        scale: Scale
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
-        self._fretboard = Fretboard(profile.tuning)
+        self._fretboard = Fretboard(profile.tuning, min_velocity)
+        self._scale = scale
 
     def _pad_from_note(self, note: int) -> Optional[Pos]:
         # TODO account for orientation
@@ -81,11 +85,13 @@ class Controller(MidiSink, Resettable):
         self,
         push: PushOutput,
         midi_processed: MidiSink,
-        profile: Profile
+        min_velocity: int,
+        profile: Profile,
+        scale: Scale
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
-        self._plucked = Plucked(self._push, self._midi_processed, profile)
+        self._plucked = Plucked(self._push, self._midi_processed, min_velocity, profile, scale)
 
     def send_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
