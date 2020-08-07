@@ -1,7 +1,7 @@
 # TODO
 
 - [ ] Highlight scales (Blue, White, Gray)
-- [ ] Highlight pressed notes (Green)
+- [x] Highlight pressed notes (Green)
 - [ ] Scale selection
 - [ ] Orientation
 - [ ] Tuning selection

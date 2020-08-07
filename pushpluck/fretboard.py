@@ -41,21 +41,51 @@ class ChokeGroup:
                 del self.note_info[note]
 
 
+@dataclass(frozen=True)
+class FretMessage:
+    # Semitone offset from configured tuning
+    semitones: int
+    # Which string (0 to max strings in tuning)
+    str_index: int
+    # `pre_fret` here and below refer to the fret offset in semitones
+    # from the visible part of the neck, not the whole neck.
+    # For example, if semitones is zero, pre_fret and fret are equal.
+    pre_fret: int
+    # An underlying message relevant to the fretted note (on, off, aftertouch)
+    msg: FrozenMessage
+
+    @property
+    def fret(self) -> int:
+        return self.pre_fret + self.semitones
+
+
 class Fretboard:
     def __init__(self, tuning: List[int]) -> None:
         self._tuning = tuning
-        self._capo_semitones = 0
+        self._semitones = 0
         num_strings = len(self._tuning)
         self._fingered: List[ChokeGroup] = \
             [ChokeGroup.empty() for i in range(num_strings)]
 
     def _get_note(self, str_index: int, pre_fret: int) -> int:
-        return self._tuning[str_index] + self._capo_semitones + pre_fret
+        return self._tuning[str_index] + self._semitones + pre_fret
 
-    def shift_capo(self, semitones: int) -> None:
-        self._capo_semitones += semitones
+    def _get_pre_fret(self, str_index: int, note: int) -> int:
+        return note - self._tuning[str_index] - self._semitones
 
-    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[FrozenMessage]:
+    def _emit_fret_msg(self, str_index: int, msg: FrozenMessage) -> FretMessage:
+        assert msg.note is not None
+        return FretMessage(
+            semitones=self._semitones,
+            str_index=str_index,
+            pre_fret=self._get_pre_fret(str_index, msg.note),
+            msg=msg
+        )
+
+    def shift_semitones(self, diff: int) -> None:
+        self._semitones += diff
+
+    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[FretMessage]:
         # Find out note from fret
         fret_note = self._get_note(str_index, pre_fret)
 
@@ -68,7 +98,7 @@ class Fretboard:
         cur_note_and_info = group.max_note_and_info()
 
         # Return control messages
-        out_msgs: List[FrozenMessage] = []
+        out_msgs: List[FretMessage] = []
         if cur_note_and_info is None:
             if prev_note_and_info is None:
                 # No notes - huh? (ignore)
@@ -77,13 +107,13 @@ class Fretboard:
                 # Single note mute - send off for prev
                 prev_note, _ = prev_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                out_msgs.append(off_msg)
+                out_msgs.append(self._emit_fret_msg(str_index, off_msg))
         else:
             cur_note, cur_info = cur_note_and_info
             if prev_note_and_info is None:
                 # Single note pluck - send on for cur
                 on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
-                out_msgs.append(on_msg)
+                out_msgs.append(self._emit_fret_msg(str_index, on_msg))
             else:
                 prev_note, _ = prev_note_and_info
                 if prev_note == cur_note:
@@ -93,18 +123,18 @@ class Fretboard:
                     # Hammer-on or pull-off
                     # Send on before off to maintain overlap for envelopes?
                     on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=cur_info.velocity)
-                    out_msgs.append(on_msg)
+                    out_msgs.append(self._emit_fret_msg(str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                    out_msgs.append(off_msg)
+                    out_msgs.append(self._emit_fret_msg(str_index, off_msg))
         return out_msgs
 
-    def handle_reset(self) -> List[FrozenMessage]:
-        out_msgs: List[FrozenMessage] = []
+    def handle_reset(self) -> List[FretMessage]:
+        out_msgs: List[FretMessage] = []
         for str_index, group in enumerate(self._fingered):
             cur_note_and_info = group.max_note_and_info()
             if cur_note_and_info is not None:
                 cur_note, _ = cur_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=cur_note, velocity=0)
-                out_msgs.append(off_msg)
+                out_msgs.append(self._emit_fret_msg(str_index, off_msg))
         self._fingered = [ChokeGroup.empty() for i in range(len(self._tuning))]
         return out_msgs
