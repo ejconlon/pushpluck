@@ -43,8 +43,20 @@ lint:
 typecheck:
 	.venv/bin/mypy -p pushpluck
 
+.PHONY: test-lint
+test-lint:
+	.venv/bin/flake8 tests
+
+.PHONY: test-typecheck
+test-typecheck:
+	.venv/bin/mypy -p tests
+
+.PHONY: unit
+unit:
+	.venv/bin/python -Werror -m pytest -v tests/unit
+
 .PHONY: test
-test: lint typecheck
+test: lint typecheck test-lint test-typecheck unit
 
 .PHONY: isort
 isort:

@@ -1,8 +1,8 @@
 from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.controller import Controller, Profile
-from pushpluck.push import PushOutput, PushPorts, cache_colors, push_ports_context
-from pushpluck.scale import NoteName, major_scale
+from pushpluck.push import cache_colors, push_ports_context, PushOutput, PushPorts
+from pushpluck.scale import major_scale, NoteName
 
 import logging
 
@@ -14,7 +14,6 @@ def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
         tuning=constants.STANDARD_TUNING
     )
     scale = major_scale(NoteName.C)
-    scale.check()
     push = PushOutput(ports.midi_out)
     # Start with a clean slate
     logging.info('resetting push')

@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from mido import Message
-from mido.frozen import FrozenMessage, freeze_message
+from mido.frozen import freeze_message, FrozenMessage
 from mido.ports import BaseInput, BaseOutput
 from pushpluck.base import Closeable
 from queue import SimpleQueue

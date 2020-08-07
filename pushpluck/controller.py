@@ -3,8 +3,8 @@ from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.fretboard import Fretboard
-from pushpluck.push import Color, Pos, PushOutput, all_pos, get_color, pad_from_note
-from pushpluck.midi import MidiSink, is_note_msg, is_note_on_msg
+from pushpluck.midi import is_note_msg, is_note_on_msg, MidiSink
+from pushpluck.push import all_pos, Color, get_color, pad_from_note, Pos, PushOutput
 from pushpluck.scale import Scale
 from typing import List, Optional
 
