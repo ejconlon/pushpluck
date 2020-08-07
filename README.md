@@ -2,6 +2,8 @@
 
 UNDER CONSTRUCTION
 
+[![CircleCI](https://circleci.com/gh/ejconlon/pushpluck.svg?style=svg&circle-token=30363f97bf32e54d1e52f481e8bd37c17f510bbe)](https://circleci.com/gh/ejconlon/pushpluck)
+
 A "plucked-string" controller for the User Mode of the Ableton Push 1.
 
 This program reads and writes to the user midi ports of the Push and emits a stream of derived midi notes and controls to a virtual midi port. Typically you will have to start this manually from the system terminal with your Push connected. You don't need Live running (or even installed), but if it is, be aware that you will have to manually press the `User` button to enter User Mode, and possibly press the `Master` button to refresh the display.
@@ -10,7 +12,7 @@ This program reads and writes to the user midi ports of the Push and emits a str
 
 To run this, you'll need a recent version of Python 3, `rtmidi`, and some Python libraries you can install with `pip`. On OSX you can run `./brewstrap.sh && make venv` to install a known good interpreter version and all dependencies.
 
-You can run the `pushpluck.main` module or simply run `./run.sh` to run the thing. The default options should be fine, but if needed you can explore them with `./run.sh --help`.
+You can run the `pushpluck.main` module with Python or simply run `./run.sh` to run the thing. The default options should be fine, but if needed you can explore them with `./run.sh --help`.
 
 ## Thanks
 
