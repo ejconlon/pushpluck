@@ -4,12 +4,6 @@ from typing import Dict, List, Set, Tuple
 
 
 @unique
-class Step(Enum):
-    Half = 1
-    Whole = 2
-
-
-@unique
 class NoteName(Enum):
     C = 0
     Cs = 1
@@ -23,6 +17,14 @@ class NoteName(Enum):
     A = 9
     As = 10
     B = 11
+
+    def add_steps(self, steps: int) -> 'NoteName':
+        v = self.value + steps
+        while v < 0:
+            v += MAX_NOTES
+        while v >= MAX_NOTES:
+            v -= MAX_NOTES
+        return NOTE_LOOKUP[v]
 
 
 MAX_NOTES = 12
@@ -46,14 +48,7 @@ def name_and_octave_from_note(note: int) -> Tuple[NoteName, int]:
     return name, octave
 
 
-def add_step(base: NoteName, step: Step) -> NoteName:
-    v = base.value + step.value
-    if v >= MAX_NOTES:
-        v -= MAX_NOTES
-    return NOTE_LOOKUP[v]
-
-
-class ScaleLookup:
+class ScaleClassifier:
     def __init__(self, root: NoteName, members: Set[NoteName]) -> None:
         self._root = root
         self._members = members
@@ -67,51 +62,50 @@ class ScaleLookup:
 
 @dataclass(frozen=True)
 class Scale:
-    root: NoteName
-    intervals: List[Step]
+    name: str
+    intervals: List[int]
 
-    def to_lookup(self) -> ScaleLookup:
-        base = self.root
+    def to_classifier(self, root: NoteName) -> ScaleClassifier:
         members: Set[NoteName] = set()
-        last = False
-        for step in self.intervals:
-            assert not last, f'Going beyond root {self.root} to {base}'
-            members.add(base)
-            base = add_step(base, step)
-            if base in members:
-                assert base == self.root, f'Already saw {base} but is not root {self.root}'
-                last = True
-        assert last, f'Scale does not end on root {self.root}'
-        return ScaleLookup(self.root, members)
+        assert self.intervals[0] == 0
+        last_steps = -1
+        for steps in self.intervals:
+            assert steps >= 0 and steps < MAX_NOTES
+            assert steps > last_steps
+            last_steps = steps
+            note = root.add_steps(steps)
+            assert note not in members
+            members.add(note)
+        return ScaleClassifier(root, members)
 
 
-MAJOR_INTERVALS = [Step.Whole, Step.Whole, Step.Half, Step.Whole, Step.Whole, Step.Whole, Step.Half]
-CHROMATIC_INTERVALS = [Step.Half for i in range(MAX_NOTES)]
+SCALES: List[Scale] = [
+    Scale('Major', [0, 2, 4, 5, 7, 9, 11]),
+    Scale('Minor', [0, 2, 3, 5, 7, 8, 10]),
+    Scale('Dorian', [0, 2, 3, 5, 7, 9, 10]),
+    Scale('Mixolydian', [0, 2, 4, 5, 7, 9, 10]),
+    Scale('Lydian', [0, 2, 4, 6, 7, 9, 11]),
+    Scale('Phrygian', [0, 1, 3, 5, 7, 8, 10]),
+    Scale('Locrian', [0, 1, 3, 4, 7, 8, 10]),
+    Scale('Diminished', [0, 1, 3, 4, 6, 7, 9, 10]),
+    Scale('Whole-half', [0, 2, 3, 5, 6, 8, 9, 11]),
+    Scale('Whole Tone', [0, 2, 4, 6, 8, 10]),
+    Scale('Minor Blues', [0, 3, 5, 6, 7, 10]),
+    Scale('Minor Pentatonic', [0, 3, 5, 7, 10]),
+    Scale('Major Pentatonic', [0, 2, 4, 7, 9]),
+    Scale('Harmonic Minor', [0, 2, 3, 5, 7, 8, 11]),
+    Scale('Melodic Minor', [0, 2, 3, 5, 7, 9, 11]),
+    Scale('Super Locrian', [0, 1, 3, 4, 6, 8, 10]),
+    Scale('Bhairav', [0, 1, 4, 5, 7, 8, 11]),
+    Scale('Hungarian Minor', [0, 2, 3, 6, 7, 8, 11]),
+    Scale('Minor Gypsy', [0, 1, 4, 5, 7, 8, 10]),
+    Scale('Hirojoshi', [0, 2, 3, 7, 8]),
+    Scale('In-Sen', [0, 1, 5, 7, 10]),
+    Scale('Iwato', [0, 1, 5, 6, 10]),
+    Scale('Kumoi', [0, 2, 3, 7, 9]),
+    Scale('Pelog', [0, 1, 3, 4, 7, 8]),
+    Scale('Spanish', [0, 1, 3, 4, 5, 6, 8, 10]),
+    Scale('Chromatic', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+]
 
-
-def major_scale(root: NoteName) -> Scale:
-    return Scale(root=root, intervals=MAJOR_INTERVALS)
-
-
-def chromatic_scale(root: NoteName) -> Scale:
-    return Scale(root=root, intervals=CHROMATIC_INTERVALS)
-
-
-@unique
-class ScaleMode(Enum):
-    Ionian = 0
-    Dorian = 1
-    Phyrigian = 2
-    Lydian = 3
-    Mixolydian = 4
-    Aeolian = 5
-    Locrian = 6
-
-
-def _rotate(elems: List[Step], places: int) -> List[Step]:
-    return elems[places:] + elems[:places]
-
-
-def mode_scale(root: NoteName, mode: ScaleMode) -> Scale:
-    intervals = _rotate(MAJOR_INTERVALS, mode.value)
-    return Scale(root, intervals)
+SCALE_LOOKUP: Dict[str, Scale] = {s.name: s for s in SCALES}

@@ -1,5 +1,4 @@
-from pushpluck.scale import (chromatic_scale, major_scale, mode_scale, name_and_octave_from_note, NoteName, Scale,
-                             ScaleMode)
+from pushpluck.scale import SCALE_LOOKUP, name_and_octave_from_note, NoteName
 
 import pytest
 
@@ -20,20 +19,27 @@ def test_note_conversion(note: int, name: NoteName, octave: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "scale, name, is_root, is_member",
+    "scale_name, root_name, cand_name, is_root, is_member",
     [
-        (major_scale(NoteName.C), NoteName.C, True, True),
-        (major_scale(NoteName.C), NoteName.A, False, True),
-        (major_scale(NoteName.C), NoteName.As, False, False),
-        (chromatic_scale(NoteName.C), NoteName.C, True, True),
-        (chromatic_scale(NoteName.C), NoteName.A, False, True),
-        (chromatic_scale(NoteName.C), NoteName.As, False, True),
-        (mode_scale(NoteName.A, ScaleMode.Aeolian), NoteName.C, False, True),
-        (mode_scale(NoteName.A, ScaleMode.Aeolian), NoteName.A, True, True),
-        (mode_scale(NoteName.A, ScaleMode.Aeolian), NoteName.As, False, False)
+        ('Major', NoteName.C, NoteName.C, True, True),
+        ('Major', NoteName.C, NoteName.A, False, True),
+        ('Major', NoteName.C, NoteName.As, False, False),
+        ('Chromatic', NoteName.C, NoteName.C, True, True),
+        ('Chromatic', NoteName.C, NoteName.A, False, True),
+        ('Chromatic', NoteName.C, NoteName.As, False, True),
+        ('Minor', NoteName.A, NoteName.C, False, True),
+        ('Minor', NoteName.A, NoteName.A, True, True),
+        ('Minor', NoteName.A, NoteName.As, False, False)
     ]
 )
-def test_scale(scale: Scale, name: NoteName, is_root: bool, is_member: bool) -> None:
-    lookup = scale.to_lookup()
-    assert is_root == lookup.is_root(name)
-    assert is_member == lookup.is_member(name)
+def test_scale(
+    scale_name: str,
+    root_name: NoteName,
+    cand_name: NoteName,
+    is_root: bool,
+    is_member: bool
+) -> None:
+    scale = SCALE_LOOKUP[scale_name]
+    classifier = scale.to_classifier(root_name)
+    assert is_root == classifier.is_root(cand_name)
+    assert is_member == classifier.is_member(cand_name)
