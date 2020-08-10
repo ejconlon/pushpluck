@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
+from pushpluck.color import COLORS, Color
 from pushpluck.fretboard import Fretboard
 from pushpluck.midi import is_note_msg, is_note_on_msg, MidiSink
-from pushpluck.push import all_pos, Color, get_color, pad_from_note, Pos, PushOutput
+from pushpluck.push import all_pos, pad_from_note, Pos, PushOutput
 from pushpluck.scale import NoteName, Scale
 from typing import List, Optional
 
@@ -54,9 +55,9 @@ class Plucked(MidiSink, Resettable):
                     if fret_pos is not None:
                         color: Color
                         if is_note_on_msg(msg):
-                            color = get_color('Green')
+                            color = COLORS['Green']
                         else:
-                            color = get_color('Red')
+                            color = COLORS['Red']
                         self._push.get_pad(fret_pos).set_color(color)
                     self._midi_processed.send_msg(msg)
         elif msg.type == 'polytouch':
@@ -79,7 +80,7 @@ class Plucked(MidiSink, Resettable):
             if pos.row == 0 or pos.row == 7:
                 pad.reset()
             else:
-                pad.set_color(get_color('Red'))
+                pad.set_color(COLORS['Red'])
 
 
 class Controller(MidiSink, Resettable):

@@ -1,67 +1,27 @@
 from contextlib import contextmanager
+from enum import Enum, unique
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Closeable, Resettable
+from pushpluck.color import COLORS, Color
 from pushpluck.midi import MidiInput, MidiOutput
-from typing import Dict, Generator, List, Optional
+from typing import Generator, List, Optional
 
 import logging
 import time
 
 
-@dataclass(frozen=True)
-class Color:
-    red: int
-    green: int
-    blue: int
-
-    def __iter__(self) -> Generator[int, None, None]:
-        yield self.red
-        yield self.green
-        yield self.blue
-
-    def to_code(self) -> str:
-        nums = ''.join(f'{x:02x}' for x in self)
-        return f'#{nums.upper()}'
-
-    @classmethod
-    def from_code(cls, code: str) -> 'Color':
-        assert code[0] == '#'
-        red = int(code[1:3], 16)
-        green = int(code[3:5], 16)
-        blue = int(code[5:7], 16)
-        return cls(red, green, blue)
-
-
-def load_colors() -> Dict[str, Color]:
-    with open('colors.txt') as f:
-        val: Optional[Color] = None
-        out: Dict[str, Color] = {}
-        for line in f.readlines():
-            line = line.strip()
-            if val is None:
-                val = Color.from_code(line)
-                assert val.to_code() == line
-            else:
-                out[line] = val
-                val = None
-        return out
-
-
-_COLORS: Optional[Dict[str, Color]] = None
-
-
-def cache_colors() -> None:
-    global _COLORS
-    if _COLORS is None:
-        _COLORS = load_colors()
-
-
-def get_color(name: str) -> Color:
-    cache_colors()
-    assert _COLORS is not None
-    return _COLORS[name]
+@unique
+class ButtonColor(Enum):
+    Half = 1
+    HalfBlinkSlow = 2
+    HalfBlinkFast = 3
+    Full = 4
+    FullBlinkSlow = 5
+    FullBlinkFast = 6
+    Off = 0
+    On = 127
 
 
 @dataclass(frozen=True)
@@ -221,18 +181,20 @@ class PadOutput(Resettable):
 
     def reset(self) -> None:
         self.led_off()
-        self.set_color(get_color('Black'))
+        self.set_color(COLORS['Black'])
 
 
 class PushOutput(Resettable):
     def __init__(self, midi_out: MidiOutput) -> None:
         self._midi_out = midi_out
+        self._pads = {pos: PadOutput(pos, midi_out) for pos in all_pos()}
+        self._lcd = LcdOutput(self._midi_out)
 
     def get_pad(self, pos: Pos) -> PadOutput:
-        return PadOutput(pos, self._midi_out)
+        return self._pads[pos]
 
     def get_lcd(self) -> LcdOutput:
-        return LcdOutput(self._midi_out)
+        return self._lcd
 
     def reset(self) -> None:
         logging.info('resetting push display')
@@ -248,7 +210,7 @@ class PushOutput(Resettable):
 def rainbow(push: PushOutput) -> None:
     names = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet']
     for name in names:
-        color = get_color(name)
+        color = COLORS[name]
         for pos in all_pos():
             pad = push.get_pad(pos)
             pad.set_color(color)

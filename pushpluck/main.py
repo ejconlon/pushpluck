@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.controller import Controller, Profile
-from pushpluck.push import cache_colors, push_ports_context, PushOutput, PushPorts
+from pushpluck.push import push_ports_context, PushOutput, PushPorts
 from pushpluck.scale import SCALE_LOOKUP, NoteName
 
 import logging
@@ -53,7 +53,6 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
     configure_logging(args.log_level)
-    cache_colors()
     with push_ports_context(
         push_port_name=args.push_port,
         processed_port_name=args.processed_port,
