@@ -1,25 +1,20 @@
 from argparse import ArgumentParser
 from pushpluck import constants
-from pushpluck.controller import Controller, Profile
+from pushpluck.config import init_config
+from pushpluck.controller import Controller
 from pushpluck.push import push_ports_context, PushOutput, PushPorts
-from pushpluck.scale import SCALE_LOOKUP, NoteName
 
 import logging
 
 
 def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
-    profile = Profile(
-        instrument_name='Guitar',
-        tuning_name='Standard',
-        tuning=constants.STANDARD_TUNING
-    )
-    scale = SCALE_LOOKUP['Major']
+    config = init_config(min_velocity)
     push = PushOutput(ports.midi_out)
     # Start with a clean slate
     logging.info('resetting push')
     push.reset()
     try:
-        controller = Controller(push, ports.midi_processed, min_velocity, profile, scale, NoteName.C)
+        controller = Controller(push, ports.midi_processed, config)
         logging.info('resetting controller')
         controller.reset()
         logging.info('controller ready')

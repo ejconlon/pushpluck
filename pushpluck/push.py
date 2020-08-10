@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from enum import Enum, unique
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck import constants
@@ -12,16 +11,16 @@ import logging
 import time
 
 
-@unique
-class ButtonColor(Enum):
-    Half = 1
-    HalfBlinkSlow = 2
-    HalfBlinkFast = 3
-    Full = 4
-    FullBlinkSlow = 5
-    FullBlinkFast = 6
-    Off = 0
-    On = 127
+# @unique
+# class ButtonColor(Enum):
+#     Half = 1
+#     HalfBlinkSlow = 2
+#     HalfBlinkFast = 3
+#     Full = 4
+#     FullBlinkSlow = 5
+#     FullBlinkFast = 6
+#     Off = 0
+#     On = 127
 
 
 @dataclass(frozen=True)
@@ -172,6 +171,9 @@ class PadOutput(Resettable):
         msg = make_led_msg(self._pos, value)
         self._midi_out.send_msg(msg)
 
+    def led_on_max(self) -> None:
+        self.led_on(127)
+
     def led_off(self) -> None:
         self.led_on(0)
 
@@ -187,14 +189,12 @@ class PadOutput(Resettable):
 class PushOutput(Resettable):
     def __init__(self, midi_out: MidiOutput) -> None:
         self._midi_out = midi_out
-        self._pads = {pos: PadOutput(pos, midi_out) for pos in all_pos()}
-        self._lcd = LcdOutput(self._midi_out)
 
     def get_pad(self, pos: Pos) -> PadOutput:
-        return self._pads[pos]
+        return PadOutput(pos, self._midi_out)
 
     def get_lcd(self) -> LcdOutput:
-        return self._lcd
+        return LcdOutput(self._midi_out)
 
     def reset(self) -> None:
         logging.info('resetting push display')

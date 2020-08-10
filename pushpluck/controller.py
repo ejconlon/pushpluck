@@ -1,39 +1,78 @@
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck import constants
-from pushpluck.base import Resettable
-from pushpluck.color import COLORS, Color
-from pushpluck.fretboard import Fretboard
-from pushpluck.midi import is_note_msg, is_note_on_msg, MidiSink
-from pushpluck.push import all_pos, pad_from_note, Pos, PushOutput
-from pushpluck.scale import NoteName, Scale
-from typing import List, Optional
+from pushpluck.base import ResetConfigurable, Resettable, Ref
+# from pushpluck.color import COLORS, Color
+from pushpluck.config import Config, PadColor
+from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
+from pushpluck.midi import is_note_msg, MidiSink
+from pushpluck.push import all_pos, pad_from_note, Pos, LcdOutput, PadOutput, PushOutput
+# from pushpluck.scale import NoteName, Scale
+# from pushpluck.pads import ColorScheme
+from typing import Dict, List, Optional
 
 import logging
 
 
-@dataclass(frozen=True)
-class Profile:
-    instrument_name: str
-    tuning_name: str
-    tuning: List[int]
+@dataclass
+class PadState:
+    pad_color: PadColor
+    pad_output: PadOutput
+    pressed: bool
+
+
+# TODO should be reset when config changes
+class PushPluckOutput(ResetConfigurable[Config]):
+    def __init__(self, push: PushOutput, config: Config) -> None:
+        super().__init__(config)
+        self._pads: Dict[Pos, PadState] = {
+            pos: PadState(self._make_pad_color(pos), push.get_pad(pos), False) for pos in all_pos()
+        }
+        self._lcd = push.get_lcd()
+
+    def set_pad_pressed(self, pos: Pos, pressed: bool) -> None:
+        config = self.get_config()
+        pad_state = self._pads[pos]
+        color = pad_state.pad_color.get_color(config.scheme, pressed)
+        if color is None:
+            pad_state.pad_output.led_off()
+        else:
+            pad_state.pad_output.set_color(color)
+            pad_state.pad_output.led_on_max()
+
+    def get_lcd(self) -> LcdOutput:
+        return self._lcd
+
+    def pre_reset(self) -> None:
+        pass
+
+    def _make_pad_color(self, pos: Pos) -> PadColor:
+        pad_color: PadColor
+        if pos.row == 0 or pos.row == 7:
+            return PadColor.misc(False)
+        else:
+            return PadColor.misc(True)
+
+    def post_reset(self) -> None:
+        for pos in all_pos():
+            pad_color = self._make_pad_color(pos)
+            self._pads[pos].pad_color = pad_color
 
 
 class Plucked(MidiSink, Resettable):
+    # TODO split into create and init
+    # This is really horrible
     def __init__(
         self,
-        push: PushOutput,
+        output: PushPluckOutput,
         midi_processed: MidiSink,
-        min_velocity: int,
-        profile: Profile,
-        scale: Scale,
-        root: NoteName
+        config_ref: Ref[Config]
     ) -> None:
-        self._push = push
+        self._output = output
         self._midi_processed = midi_processed
-        self._fretboard = Fretboard(profile.tuning, min_velocity)
-        self._scale = scale
-        self._root = root
+        fret_config = FretboardConfig.extract(config_ref.get_value())
+        self._fretboard = Fretboard(fret_config, self.handle_fret_msgs)
+        config_ref.add_listener(lambda _, config: self._fretboard.configure(FretboardConfig.extract(config)))
 
     def _pad_from_note(self, note: int) -> Optional[Pos]:
         # TODO account for orientation
@@ -47,40 +86,44 @@ class Plucked(MidiSink, Resettable):
         if is_note_msg(msg):
             pos = self._pad_from_note(msg.note)
             if pos is not None and pos.row >= 1 and pos.row <= 6:
-                str_index = pos.row - 1
-                fret_msgs = self._fretboard.handle_note(str_index, pos.col, msg.velocity)
-                for fret_msg in fret_msgs:
-                    msg = fret_msg.msg
-                    fret_pos = self._pad_from_pre_fret(fret_msg.str_index, fret_msg.pre_fret)
-                    if fret_pos is not None:
-                        color: Color
-                        if is_note_on_msg(msg):
-                            color = COLORS['Green']
-                        else:
-                            color = COLORS['Red']
-                        self._push.get_pad(fret_pos).set_color(color)
-                    self._midi_processed.send_msg(msg)
+                self._fretboard.handle_note(
+                    str_index=pos.row - 1,
+                    pre_fret=pos.col,
+                    velocity=msg.velocity
+                )
         elif msg.type == 'polytouch':
             # TODO send polytouch
             # pos = pad_from_note(msg.note)
             pass
 
-    def reset(self) -> None:
-        # Send note offs
-        logging.info('plucked sending note offs')
-        fret_msgs = self._fretboard.handle_reset()
+    def handle_fret_msgs(self, fret_msgs: List[FretMessage]) -> None:
         for fret_msg in fret_msgs:
+            fret_pos = self._pad_from_pre_fret(fret_msg.str_index, fret_msg.pre_fret)
+            if fret_pos is not None:
+                self._output.set_pad_pressed(fret_pos, fret_msg.sounding)
             self._midi_processed.send_msg(fret_msg.msg)
 
-        # Update UI
-        # TODO handle different number of strings
-        logging.info('plucked resetting ui')
-        for pos in all_pos():
-            pad = self._push.get_pad(pos)
-            if pos.row == 0 or pos.row == 7:
-                pad.reset()
-            else:
-                pad.set_color(COLORS['Red'])
+    def reset(self) -> None:
+        # Send note offs
+        logging.info('plucked resetting fretboard')
+        self._fretboard.reset()
+
+        # Update LCD
+        logging.info('plucked resetting controller lcd')
+        lcd = self._output.get_lcd()
+        for row in range(constants.DISPLAY_MAX_ROWS):
+            for block_col in range(constants.DISPLAY_MAX_BLOCKS):
+                lcd.display_block(row, block_col, '0123456789ABCDEF!')
+
+        # Update pads
+        # # TODO handle different number of strings
+        # logging.info('plucked resetting ui')
+        # for pos in all_pos():
+        #     pad = self._push.get_pad(pos)
+        #     if pos.row == 0 or pos.row == 7:
+        #         pad.reset()
+        #     else:
+        #         pad.set_color(COLORS['Red'])
 
 
 class Controller(MidiSink, Resettable):
@@ -88,14 +131,11 @@ class Controller(MidiSink, Resettable):
         self,
         push: PushOutput,
         midi_processed: MidiSink,
-        min_velocity: int,
-        profile: Profile,
-        scale: Scale,
-        root: NoteName
+        config: Config
     ) -> None:
-        self._push = push
-        self._midi_processed = midi_processed
-        self._plucked = Plucked(self._push, self._midi_processed, min_velocity, profile, scale, root)
+        self._config_ref = Ref(config)
+        self._output = PushPluckOutput(push, config)
+        self._plucked = Plucked(self._output, midi_processed, self._config_ref)
 
     def send_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
@@ -107,11 +147,4 @@ class Controller(MidiSink, Resettable):
             self._plucked.send_msg(msg)
 
     def reset(self):
-        logging.info('resetting controller lcd')
-        lcd = self._push.get_lcd()
-        for row in range(constants.DISPLAY_MAX_ROWS):
-            for block_col in range(constants.DISPLAY_MAX_BLOCKS):
-                lcd.display_block(row, block_col, '0123456789ABCDEF!')
-
-        logging.info('resetting controller plucked')
         self._plucked.reset()

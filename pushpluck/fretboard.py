@@ -1,7 +1,9 @@
 from bisect import bisect_left
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
-from typing import Dict, List, Optional, Tuple
+from pushpluck.base import ResetConfigurable
+from pushpluck.config import Config
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -51,6 +53,8 @@ class FretMessage:
     # from the visible part of the neck, not the whole neck.
     # For example, if semitones is zero, pre_fret and fret are equal.
     pre_fret: int
+    # If the note is making sound
+    sounding: bool
     # An underlying message relevant to the fretted note (on, off, aftertouch)
     msg: FrozenMessage
 
@@ -59,20 +63,37 @@ class FretMessage:
         return self.pre_fret + self.semitones
 
 
-class Fretboard:
-    def __init__(self, tuning: List[int], min_velocity: int) -> None:
-        self._tuning = tuning
+@dataclass(frozen=True)
+class FretboardConfig:
+    tuning: List[int]
+    min_velocity: int
+
+    @classmethod
+    def extract(cls, config: Config) -> 'FretboardConfig':
+        return FretboardConfig(
+            tuning=config.profile.tuning,
+            min_velocity=config.min_velocity
+        )
+
+
+class Fretboard(ResetConfigurable[FretboardConfig]):
+    def __init__(
+        self,
+        config: FretboardConfig,
+        observer: Callable[[List[FretMessage]], None]
+    ) -> None:
+        self._config = config
+        self._observer = observer
         self._semitones = 0
-        num_strings = len(self._tuning)
-        self._fingered: List[ChokeGroup] = \
-            [ChokeGroup.empty() for i in range(num_strings)]
-        self._min_velocity = min_velocity
+        self._fingered: List[ChokeGroup] = []
+        # Initialize fingered
+        self.post_reset()
 
     def _get_note(self, str_index: int, pre_fret: int) -> int:
-        return self._tuning[str_index] + self._semitones + pre_fret
+        return self._config.tuning[str_index] + self._semitones + pre_fret
 
     def _get_pre_fret(self, str_index: int, note: int) -> int:
-        return note - self._tuning[str_index] - self._semitones
+        return note - self._config.tuning[str_index] - self._semitones
 
     def _emit_fret_msg(self, str_index: int, msg: FrozenMessage) -> FretMessage:
         assert msg.note is not None
@@ -80,6 +101,7 @@ class Fretboard:
             semitones=self._semitones,
             str_index=str_index,
             pre_fret=self._get_pre_fret(str_index, msg.note),
+            sounding=msg.type == 'note_on' and msg.velocity > 0,
             msg=msg
         )
 
@@ -87,12 +109,12 @@ class Fretboard:
         if velocity == 0:
             return 0
         else:
-            return max(velocity, self._min_velocity)
+            return max(velocity, self._config.min_velocity)
 
     def shift_semitones(self, diff: int) -> None:
         self._semitones += diff
 
-    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> List[FretMessage]:
+    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> None:
         # Find out note from fret
         fret_note = self._get_note(str_index, pre_fret)
 
@@ -135,9 +157,9 @@ class Fretboard:
                     out_msgs.append(self._emit_fret_msg(str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
                     out_msgs.append(self._emit_fret_msg(str_index, off_msg))
-        return out_msgs
+        self._observer(out_msgs)
 
-    def handle_reset(self) -> List[FretMessage]:
+    def pre_reset(self) -> None:
         out_msgs: List[FretMessage] = []
         for str_index, group in enumerate(self._fingered):
             cur_note_and_info = group.max_note_and_info()
@@ -145,5 +167,8 @@ class Fretboard:
                 cur_note, _ = cur_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=cur_note, velocity=0)
                 out_msgs.append(self._emit_fret_msg(str_index, off_msg))
-        self._fingered = [ChokeGroup.empty() for i in range(len(self._tuning))]
-        return out_msgs
+        self._observer(out_msgs)
+
+    def post_reset(self) -> None:
+        self._semitones = 0
+        self._fingered = [ChokeGroup.empty() for i in range(len(self._config.tuning))]
