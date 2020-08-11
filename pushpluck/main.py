@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.config import init_config
-from pushpluck.controller import Controller
+from pushpluck.controller import Plucked
 from pushpluck.push import push_ports_context, PushOutput, PushPorts
 
 import logging
@@ -14,13 +14,13 @@ def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
     logging.info('resetting push')
     push.reset()
     try:
-        controller = Controller(push, ports.midi_processed, config)
+        plucked = Plucked(push, ports.midi_processed, config)
         logging.info('resetting controller')
-        controller.reset()
+        plucked.reset()
         logging.info('controller ready')
         while True:
             msg = ports.midi_in.recv_msg()
-            controller.send_msg(msg)
+            plucked.send_msg(msg)
     finally:
         # End with a clean slate
         logging.info('final reset of push')

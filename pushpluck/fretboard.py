@@ -44,15 +44,21 @@ class ChokeGroup:
 
 
 @dataclass(frozen=True)
-class FretMessage:
-    # Semitone offset from configured tuning
-    semitones: int
+class StringPos:
     # Which string (0 to max strings in tuning)
     str_index: int
     # `pre_fret` here and below refer to the fret offset in semitones
     # from the visible part of the neck, not the whole neck.
     # For example, if semitones is zero, pre_fret and fret are equal.
     pre_fret: int
+
+
+@dataclass(frozen=True)
+class FretMessage:
+    # Semitone offset from configured tuning
+    semitones: int
+    # Position on strings/frets
+    str_pos: StringPos
     # If the note is making sound
     sounding: bool
     # An underlying message relevant to the fretted note (on, off, aftertouch)
@@ -60,7 +66,7 @@ class FretMessage:
 
     @property
     def fret(self) -> int:
-        return self.pre_fret + self.semitones
+        return self.str_pos.pre_fret + self.semitones
 
 
 @dataclass(frozen=True)
@@ -79,18 +85,18 @@ class FretboardConfig:
 class Fretboard(ResetConfigurable[FretboardConfig]):
     def __init__(
         self,
-        config: FretboardConfig,
+        fret_config: FretboardConfig,
         observer: Callable[[List[FretMessage]], None]
     ) -> None:
-        self._config = config
+        super().__init__(fret_config)
         self._observer = observer
         self._semitones = 0
         self._fingered: List[ChokeGroup] = []
         # Initialize fingered
         self.post_reset()
 
-    def _get_note(self, str_index: int, pre_fret: int) -> int:
-        return self._config.tuning[str_index] + self._semitones + pre_fret
+    def get_note(self, str_pos: StringPos) -> int:
+        return self._config.tuning[str_pos.str_index] + self._semitones + str_pos.pre_fret
 
     def _get_pre_fret(self, str_index: int, note: int) -> int:
         return note - self._config.tuning[str_index] - self._semitones
@@ -99,8 +105,10 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
         assert msg.note is not None
         return FretMessage(
             semitones=self._semitones,
-            str_index=str_index,
-            pre_fret=self._get_pre_fret(str_index, msg.note),
+            str_pos=StringPos(
+                str_index=str_index,
+                pre_fret=self._get_pre_fret(str_index, msg.note)
+            ),
             sounding=msg.type == 'note_on' and msg.velocity > 0,
             msg=msg
         )
@@ -114,12 +122,12 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
     def shift_semitones(self, diff: int) -> None:
         self._semitones += diff
 
-    def handle_note(self, str_index: int, pre_fret: int, velocity: int) -> None:
+    def handle_note(self, str_pos: StringPos, velocity: int) -> None:
         # Find out note from fret
-        fret_note = self._get_note(str_index, pre_fret)
+        fret_note = self.get_note(str_pos)
 
         # Lookup choke group and find prev max note
-        group = self._fingered[str_index]
+        group = self._fingered[str_pos.str_index]
         prev_note_and_info = group.max_note_and_info()
 
         # Add note to group and find cur max note
@@ -136,14 +144,14 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
                 # Single note mute - send off for prev
                 prev_note, _ = prev_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                out_msgs.append(self._emit_fret_msg(str_index, off_msg))
+                out_msgs.append(self._emit_fret_msg(str_pos.str_index, off_msg))
         else:
             cur_note, cur_info = cur_note_and_info
             if prev_note_and_info is None:
                 # Single note pluck - send on for cur
                 velocity = self._clamp_velocity(cur_info.velocity)
                 on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
-                out_msgs.append(self._emit_fret_msg(str_index, on_msg))
+                out_msgs.append(self._emit_fret_msg(str_pos.str_index, on_msg))
             else:
                 prev_note, _ = prev_note_and_info
                 if prev_note == cur_note:
@@ -154,9 +162,9 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
                     # Send on before off to maintain overlap for envelopes?
                     velocity = self._clamp_velocity(cur_info.velocity)
                     on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
-                    out_msgs.append(self._emit_fret_msg(str_index, on_msg))
+                    out_msgs.append(self._emit_fret_msg(str_pos.str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                    out_msgs.append(self._emit_fret_msg(str_index, off_msg))
+                    out_msgs.append(self._emit_fret_msg(str_pos.str_index, off_msg))
         self._observer(out_msgs)
 
     def pre_reset(self) -> None:
@@ -172,3 +180,7 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
     def post_reset(self) -> None:
         self._semitones = 0
         self._fingered = [ChokeGroup.empty() for i in range(len(self._config.tuning))]
+
+    def listen(self, version: int, config: Config) -> None:
+        fret_config = FretboardConfig.extract(config)
+        self.configure(fret_config)
