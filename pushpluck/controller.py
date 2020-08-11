@@ -1,6 +1,6 @@
 from mido.frozen import FrozenMessage
 from pushpluck import constants
-from pushpluck.base import Resettable, Ref
+from pushpluck.base import Resettable
 from pushpluck.config import Config, NoteType, PadColor
 from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage, StringPos
 from pushpluck.midi import is_note_msg, MidiSink
@@ -22,12 +22,19 @@ class Plucked(MidiSink, Resettable):
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
-        self._config_ref = Ref(config)
+        self._config: Config
+        self._pad_colors: Dict[Pos, PadColor]
+        self._fretboard: Fretboard
+        self._handle_config(config)
+
+    def _handle_config(self, config: Config) -> None:
+        self._config = config
         fret_config = FretboardConfig.extract(config)
-        self._fretboard = Fretboard(fret_config, self.handle_fret_msgs)
-        self._config_ref.add_listener(self._fretboard.listen)
-        self._pad_colors: Dict[Pos, PadColor] = {}
-        # Fill in initial pad colors
+        if not hasattr(self, '_fretboard'):
+            self._fretboard = Fretboard(fret_config)
+        else:
+            fret_msgs = self._fretboard.handle_config(fret_config)
+            self._handle_fret_msgs(fret_msgs)
         self._reset_pad_colors()
 
     def _str_pos_from_pad(self, pos: Pos) -> Optional[StringPos]:
@@ -47,7 +54,6 @@ class Plucked(MidiSink, Resettable):
         if str_pos is None:
             return PadColor.misc(False)
         else:
-            # TODO make real pad color
             note = self._fretboard.get_note(str_pos)
             name, _ = name_and_octave_from_note(note)
             note_type: NoteType
@@ -60,8 +66,7 @@ class Plucked(MidiSink, Resettable):
             return PadColor.note(note_type)
 
     def _reset_pad_colors(self) -> None:
-        config = self._config_ref.get_value()
-        classifier = config.scale.to_classifier(config.root)
+        classifier = self._config.scale.to_classifier(self._config.root)
         self._pad_colors = {
             pos: self._make_pad_color(classifier, pos) for pos in all_pos()
         }
@@ -71,15 +76,15 @@ class Plucked(MidiSink, Resettable):
         return Pos(row=str_pos.str_index + 1, col=str_pos.pre_fret)
 
     def _set_pad_pressed(self, pos: Pos, pressed: bool) -> None:
-        config = self._config_ref.get_value()
         pad_color = self._pad_colors[pos]
-        color = pad_color.get_color(config.scheme, pressed)
+        color = pad_color.get_color(self._config.scheme, pressed)
         pad_output = self._push.get_pad(pos)
         if color is None:
             pad_output.led_off()
         else:
             pad_output.set_color(color)
-            pad_output.led_on_max()
+            # Apparently color and led on are incompatible
+            # pad_output.led_on_max()
 
     def send_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
@@ -90,12 +95,13 @@ class Plucked(MidiSink, Resettable):
         elif is_note_msg(msg):
             str_pos = self._str_pos_from_note(msg.note)
             if str_pos is not None:
-                self._fretboard.handle_note(str_pos, msg.velocity)
+                fret_msgs = self._fretboard.handle_note(str_pos, msg.velocity)
+                self._handle_fret_msgs(fret_msgs)
         elif msg.type == 'polytouch':
             # TODO send polytouch
             pass
 
-    def handle_fret_msgs(self, fret_msgs: List[FretMessage]) -> None:
+    def _handle_fret_msgs(self, fret_msgs: List[FretMessage]) -> None:
         for fret_msg in fret_msgs:
             fret_pos = self._pad_from_str_pos(fret_msg.str_pos)
             if fret_pos is not None:
@@ -105,7 +111,8 @@ class Plucked(MidiSink, Resettable):
     def reset(self) -> None:
         # Send note offs
         logging.info('plucked resetting fretboard')
-        self._fretboard.reset()
+        fret_msgs = self._fretboard.handle_reset()
+        self._handle_fret_msgs(fret_msgs)
 
         # Update LCD
         logging.info('plucked resetting controller lcd')

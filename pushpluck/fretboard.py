@@ -1,9 +1,8 @@
 from bisect import bisect_left
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
-from pushpluck.base import ResetConfigurable
 from pushpluck.config import Config
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -82,24 +81,18 @@ class FretboardConfig:
         )
 
 
-class Fretboard(ResetConfigurable[FretboardConfig]):
-    def __init__(
-        self,
-        fret_config: FretboardConfig,
-        observer: Callable[[List[FretMessage]], None]
-    ) -> None:
-        super().__init__(fret_config)
-        self._observer = observer
-        self._semitones = 0
-        self._fingered: List[ChokeGroup] = []
-        # Initialize fingered
-        self.post_reset()
+class Fretboard:
+    def __init__(self, fret_config: FretboardConfig) -> None:
+        self._fret_config: FretboardConfig
+        self._semitones: int
+        self._fingered: List[ChokeGroup]
+        self._init(fret_config)
 
     def get_note(self, str_pos: StringPos) -> int:
-        return self._config.tuning[str_pos.str_index] + self._semitones + str_pos.pre_fret
+        return self._fret_config.tuning[str_pos.str_index] + self._semitones + str_pos.pre_fret
 
     def _get_pre_fret(self, str_index: int, note: int) -> int:
-        return note - self._config.tuning[str_index] - self._semitones
+        return note - self._fret_config.tuning[str_index] - self._semitones
 
     def _emit_fret_msg(self, str_index: int, msg: FrozenMessage) -> FretMessage:
         assert msg.note is not None
@@ -117,12 +110,12 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
         if velocity == 0:
             return 0
         else:
-            return max(velocity, self._config.min_velocity)
+            return max(velocity, self._fret_config.min_velocity)
 
     def shift_semitones(self, diff: int) -> None:
         self._semitones += diff
 
-    def handle_note(self, str_pos: StringPos, velocity: int) -> None:
+    def handle_note(self, str_pos: StringPos, velocity: int) -> List[FretMessage]:
         # Find out note from fret
         fret_note = self.get_note(str_pos)
 
@@ -165,9 +158,14 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
                     out_msgs.append(self._emit_fret_msg(str_pos.str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
                     out_msgs.append(self._emit_fret_msg(str_pos.str_index, off_msg))
-        self._observer(out_msgs)
+        return out_msgs
 
-    def pre_reset(self) -> None:
+    def _init(self, fret_config: FretboardConfig) -> None:
+        self._fret_config = fret_config
+        self._semitones = 0
+        self._fingered = [ChokeGroup.empty() for i in range(len(fret_config.tuning))]
+
+    def _note_offs(self) -> List[FretMessage]:
         out_msgs: List[FretMessage] = []
         for str_index, group in enumerate(self._fingered):
             cur_note_and_info = group.max_note_and_info()
@@ -175,12 +173,12 @@ class Fretboard(ResetConfigurable[FretboardConfig]):
                 cur_note, _ = cur_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=cur_note, velocity=0)
                 out_msgs.append(self._emit_fret_msg(str_index, off_msg))
-        self._observer(out_msgs)
+        return out_msgs
 
-    def post_reset(self) -> None:
-        self._semitones = 0
-        self._fingered = [ChokeGroup.empty() for i in range(len(self._config.tuning))]
+    def handle_config(self, fret_config: FretboardConfig) -> List[FretMessage]:
+        out_msgs = self._note_offs()
+        self._init(fret_config)
+        return out_msgs
 
-    def listen(self, version: int, config: Config) -> None:
-        fret_config = FretboardConfig.extract(config)
-        self.configure(fret_config)
+    def handle_reset(self) -> List[FretMessage]:
+        return self.handle_config(self._fret_config)
