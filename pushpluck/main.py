@@ -20,8 +20,11 @@ def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
         logging.info('controller ready')
         while True:
             msg = ports.midi_in.recv_msg()
-            plucked.send_msg(msg)
+            plucked.handle_msg(msg)
     finally:
+        # Send all notes off
+        logging.info('final all notes off')
+        ports.midi_processed.reset()
         # End with a clean slate
         logging.info('final reset of push')
         push.reset()

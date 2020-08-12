@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from mido import Message
 from mido.frozen import freeze_message, FrozenMessage
 from mido.ports import BaseInput, BaseOutput
-from pushpluck.base import Closeable
+from pushpluck.base import Closeable, Resettable
 from queue import SimpleQueue
 from typing import Optional
 
@@ -19,13 +19,13 @@ def is_note_on_msg(msg: FrozenMessage) -> bool:
     return msg.type == 'note_on' and msg.velocity > 0
 
 
-class MidiSource(metaclass=ABCMeta):
+class MidiSource(Closeable, metaclass=ABCMeta):
     @abstractmethod
     def recv_msg(self) -> FrozenMessage:
         raise NotImplementedError()
 
 
-class MidiSink(metaclass=ABCMeta):
+class MidiSink(Resettable, Closeable, metaclass=ABCMeta):
     @abstractmethod
     def send_msg(self, msg: FrozenMessage) -> None:
         raise NotImplementedError()
@@ -87,6 +87,9 @@ class MidiOutput(MidiSink, Closeable):
         self._out_port = out_port
         self._delay = delay
         self._last_sent = 0.0
+
+    def reset(self) -> None:
+        self._out_port.reset()
 
     def close(self) -> None:
         self._out_port.close()

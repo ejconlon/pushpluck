@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 import logging
 
 
-class Plucked(MidiSink, Resettable):
+class Plucked(Resettable):
     # TODO split into create and init
     # This is really horrible
     def __init__(
@@ -86,7 +86,7 @@ class Plucked(MidiSink, Resettable):
             # Apparently color and led on are incompatible
             # pad_output.led_on_max()
 
-    def send_msg(self, msg: FrozenMessage) -> None:
+    def handle_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
                 and msg.control == constants.ButtonCC.Master.value \
                 and msg.value == 0
