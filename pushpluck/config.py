@@ -77,16 +77,26 @@ class ControlPadColor(PadColor):
         return scheme.control_pressed if pressed else scheme.control
 
 
+@unique
+class Orientation(Enum):
+    Left = auto()
+    Up = auto()
+
+
 @dataclass(frozen=True)
 class Profile:
     instrument_name: str
     tuning_name: str
     tuning: List[int]
+    orientation: Orientation
 
 
 @dataclass(frozen=True)
 class Config:
-    profile: Profile
+    instrument_name: str
+    tuning_name: str
+    tuning: List[int]
+    orientation: Orientation
     scale: Scale
     root: NoteName
     scheme: ColorScheme
@@ -95,11 +105,10 @@ class Config:
 
 def init_config(min_velocity: int) -> Config:
     return Config(
-        profile=Profile(
-            instrument_name='Guitar',
-            tuning_name='Standard',
-            tuning=constants.STANDARD_TUNING
-        ),
+        instrument_name='Guitar',
+        tuning_name='Standard',
+        tuning=constants.STANDARD_TUNING,
+        orientation=Orientation.Left,
         scale=SCALE_LOOKUP['Major'],
         root=NoteName.C,
         scheme=ColorScheme(

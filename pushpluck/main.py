@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.config import init_config
-from pushpluck.controller import Plucked
+from pushpluck.plucked import Plucked
 from pushpluck.push import push_ports_context, PushOutput, PushPorts
 
 import logging

@@ -5,60 +5,11 @@ from pushpluck import constants
 from pushpluck.base import Closeable, Resettable
 from pushpluck.color import COLORS, Color
 from pushpluck.midi import MidiInput, MidiOutput
+from pushpluck.pos import Pos
 from typing import Generator, List, Optional
 
 import logging
 import time
-
-
-# @unique
-# class ButtonColor(Enum):
-#     Half = 1
-#     HalfBlinkSlow = 2
-#     HalfBlinkFast = 3
-#     Full = 4
-#     FullBlinkSlow = 5
-#     FullBlinkFast = 6
-#     Off = 0
-#     On = 127
-
-
-@dataclass(frozen=True)
-class Pos:
-    """
-    (0,0) is bottom left corner (lowest note)
-    (7,7) is top right corner (highest note)
-    """
-
-    row: int
-    col: int
-
-    def __iter__(self) -> Generator[int, None, None]:
-        yield self.row
-        yield self.col
-
-    def to_index(self) -> int:
-        return constants.NUM_PAD_COLS * self.row + self.col
-
-    def to_note(self) -> int:
-        return constants.LOW_NOTE + self.to_index()
-
-
-def pad_from_note(note: int) -> Optional[Pos]:
-    if note < constants.LOW_NOTE or note >= constants.HIGH_NOTE:
-        return None
-    else:
-        index = note - constants.LOW_NOTE
-        row = index // constants.NUM_PAD_COLS
-        col = index % constants.NUM_PAD_COLS
-        return Pos(row=row, col=col)
-
-
-def all_pos() -> Generator[Pos, None, None]:
-    """ Iterator from lowest to highest pos """
-    for row in range(constants.NUM_PAD_ROWS):
-        for col in range(constants.NUM_PAD_COLS):
-            yield Pos(row, col)
 
 
 def frame_sysex(raw_data: List[int]) -> FrozenMessage:
@@ -202,7 +153,7 @@ class PushOutput(Resettable):
         lcd.reset()
 
         logging.info('resetting push pads')
-        for pos in all_pos():
+        for pos in Pos.iter_all():
             pad = self.get_pad(pos)
             pad.reset()
 
@@ -211,7 +162,7 @@ def rainbow(push: PushOutput) -> None:
     names = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet']
     for name in names:
         color = COLORS[name]
-        for pos in all_pos():
+        for pos in Pos.iter_all():
             pad = push.get_pad(pos)
             pad.set_color(color)
             pad.led_on(40)
