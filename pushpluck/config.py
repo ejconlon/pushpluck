@@ -121,7 +121,7 @@ def default_scheme() -> ColorScheme:
     return ColorScheme(
         root_note=COLORS['Blue'],
         member_note=COLORS['White'],
-        other_note=COLORS['Gray'],
+        other_note=COLORS['Black'],
         pressed_note=COLORS['Green'],
         misc_pressed=COLORS['Sky'],
         control=COLORS['Yellow'],

@@ -134,7 +134,6 @@ class PadOutput(Resettable):
 
     def reset(self) -> None:
         self.led_off()
-        self.set_color(COLORS['Black'])
 
 
 class PushOutput(Resettable):

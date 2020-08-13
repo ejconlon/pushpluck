@@ -65,7 +65,8 @@ class Plucked(Resettable):
         for fret_msg in fret_msgs:
             pad_pos = self._viewport.pad_pos_from_str_pos(fret_msg.str_pos)
             if pad_pos is not None:
-                self._pads.set_pad_pressed(pad_pos, fret_msg.is_sounding())
+                pads_msgs = self._pads.set_pad_pressed(pad_pos, fret_msg.is_sounding())
+                self._handle_pads_msgs(pads_msgs)
             self._midi_processed.send_msg(fret_msg.msg)
 
     def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:

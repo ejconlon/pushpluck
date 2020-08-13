@@ -49,10 +49,18 @@ class ViewportQueries(metaclass=ABCMeta):
 
 class Viewport(Component[ViewportConfig, ViewportState, None], ViewportQueries):
     @classmethod
+    def extract_config(cls, root_config: Config) -> ViewportConfig:
+        return ViewportConfig.extract(root_config)
+
+    @classmethod
+    def initialize_state(cls, config: ViewportConfig) -> ViewportState:
+        return ViewportState.initialize(config)
+
+    @classmethod
     def construct(cls, root_config: Config) -> 'Viewport':
         return cls(cls.extract_config(root_config))
 
-    def handle_internal_config(self, config: ViewportConfig) -> None:
+    def internal_handle_config(self, config: ViewportConfig) -> None:
         self._config = config
         self.handle_reset()
 

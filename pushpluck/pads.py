@@ -64,6 +64,7 @@ class Pads(Component[PadsConfig, PadsState, List[PadsMessage]]):
         self._scheme = scheme
         self._fretboard = fretboard
         self._viewport = viewport
+        self._reset_pad_colors()
 
     def _make_pad_color(self, classifier: ScaleClassifier, pos: Pos) -> PadColor:
         pad_color: PadColor
@@ -85,12 +86,14 @@ class Pads(Component[PadsConfig, PadsState, List[PadsMessage]]):
     def _reset_pad_colors(self) -> None:
         classifier = self._config.scale.to_classifier(self._config.root)
         for pos in Pos.iter_all():
-            self._state.lookup[pos].color = self._make_pad_color(classifier, pos)
+            color = self._make_pad_color(classifier, pos)
+            self._state.lookup[pos].color = color
 
-    def set_pad_pressed(self, pos: Pos, pressed: bool) -> None:
+    def set_pad_pressed(self, pos: Pos, pressed: bool) -> List[PadsMessage]:
         self._state.lookup[pos].pressed = pressed
+        return [PadsMessage(pos, self._get_pad_color(pos))]
 
-    def get_pad_color(self, pos: Pos) -> Optional[Color]:
+    def _get_pad_color(self, pos: Pos) -> Optional[Color]:
         pad = self._state.lookup[pos]
         return pad.color.get_color(self._scheme, pad.pressed)
 
@@ -102,5 +105,5 @@ class Pads(Component[PadsConfig, PadsState, List[PadsMessage]]):
     def handle_reset(self) -> List[PadsMessage]:
         pads_msgs: List[PadsMessage] = []
         for pos in Pos.iter_all():
-            pads_msgs.append(PadsMessage(pos, self.get_pad_color(pos)))
+            pads_msgs.append(PadsMessage(pos, self._get_pad_color(pos)))
         return pads_msgs
