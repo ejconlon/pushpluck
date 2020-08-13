@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from pushpluck.component import Component, ComponentConfig, ComponentState
+from pushpluck.component import Component, ComponentConfig
 from pushpluck.config import Config, Orientation
 from pushpluck.fretboard import StringPos
 from pushpluck.pos import Pos
@@ -14,20 +14,20 @@ class ViewportConfig(ComponentConfig):
 
     @classmethod
     def extract(cls, root_config: Config) -> 'ViewportConfig':
-        return ViewportConfig(
+        return cls(
             num_strings=len(root_config.tuning),
             orientation=root_config.orientation
         )
 
 
 @dataclass
-class ViewportState(ComponentState[ViewportConfig]):
+class ViewportState:
     str_offset: int
     fret_offset: int
 
     @classmethod
     def initialize(cls, config: ViewportConfig) -> 'ViewportState':
-        return ViewportState(
+        return cls(
             str_offset=0,
             fret_offset=0
         )
@@ -47,18 +47,14 @@ class ViewportQueries(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class Viewport(Component[ViewportConfig, ViewportState, None], ViewportQueries):
+class Viewport(Component[ViewportConfig, None], ViewportQueries):
     @classmethod
     def extract_config(cls, root_config: Config) -> ViewportConfig:
         return ViewportConfig.extract(root_config)
 
-    @classmethod
-    def initialize_state(cls, config: ViewportConfig) -> ViewportState:
-        return ViewportState.initialize(config)
-
-    @classmethod
-    def construct(cls, root_config: Config) -> 'Viewport':
-        return cls(cls.extract_config(root_config))
+    def __init__(self, config: ViewportConfig) -> None:
+        super().__init__(config)
+        self._state = ViewportState.initialize(config)
 
     def internal_handle_config(self, config: ViewportConfig) -> None:
         self._config = config

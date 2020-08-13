@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck.config import Config
 from pushpluck.midi import is_note_on_msg
-from pushpluck.component import Component, ComponentConfig, ComponentState
+from pushpluck.component import Component, ComponentConfig
 from typing import Dict, List, Optional, Tuple
 
 
@@ -80,7 +80,7 @@ class FretboardConfig(ComponentConfig):
 
 
 @dataclass
-class FretboardState(ComponentState[FretboardConfig]):
+class FretboardState:
     fingered: List[ChokeGroup]
 
     @classmethod
@@ -96,18 +96,14 @@ class FretboardQueries(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class Fretboard(Component[FretboardConfig, FretboardState, List[FretMessage]], FretboardQueries):
-    @classmethod
-    def construct(cls, root_config: Config) -> 'Fretboard':
-        return cls(cls.extract_config(root_config))
-
+class Fretboard(Component[FretboardConfig, List[FretMessage]], FretboardQueries):
     @classmethod
     def extract_config(cls, root_config: Config) -> FretboardConfig:
         return FretboardConfig.extract(root_config)
 
-    @classmethod
-    def initialize_state(cls, config: FretboardConfig) -> FretboardState:
-        return FretboardState.initialize(config)
+    def __init__(self, config: FretboardConfig) -> None:
+        super().__init__(config)
+        self._state = FretboardState.initialize(config)
 
     def get_note(self, str_pos: StringPos) -> int:
         return self._config.tuning[str_pos.str_index] + str_pos.fret

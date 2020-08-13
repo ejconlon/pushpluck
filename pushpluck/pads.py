@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from pushpluck.component import Component, ComponentConfig, ComponentState
+from pushpluck.component import Component, ComponentConfig
 from pushpluck.config import ColorScheme, Config, NoteType, PadColor
 from pushpluck.color import Color
 from pushpluck.fretboard import FretboardQueries
@@ -29,11 +29,11 @@ class SinglePadState:
 
 
 @dataclass
-class PadsState(ComponentState[PadsConfig]):
+class PadsState:
     lookup: Dict[Pos, SinglePadState]
 
     @classmethod
-    def initialize(cls, config: PadsConfig) -> 'PadsState':
+    def default(cls) -> 'PadsState':
         return cls({pos: SinglePadState(PadColor.misc(False), False) for pos in Pos.iter_all()})
 
 
@@ -43,27 +43,23 @@ class PadsMessage:
     color: Optional[Color]
 
 
-class Pads(Component[PadsConfig, PadsState, List[PadsMessage]]):
+class Pads(Component[PadsConfig, List[PadsMessage]]):
     @classmethod
     def extract_config(cls, root_config: Config) -> PadsConfig:
         return PadsConfig.extract(root_config)
-
-    @classmethod
-    def initialize_state(cls, config: PadsConfig) -> PadsState:
-        return PadsState.initialize(config)
 
     def __init__(
         self,
         scheme: ColorScheme,
         fretboard: FretboardQueries,
         viewport: ViewportQueries,
-        root_config: Config
+        config: PadsConfig
     ) -> None:
-        config = PadsConfig.extract(root_config)
         super().__init__(config)
         self._scheme = scheme
         self._fretboard = fretboard
         self._viewport = viewport
+        self._state = PadsState.default()
         self._reset_pad_colors()
 
     def _make_pad_color(self, classifier: ScaleClassifier, pos: Pos) -> PadColor:

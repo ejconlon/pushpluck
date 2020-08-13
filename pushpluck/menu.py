@@ -1,16 +1,13 @@
 from dataclasses import dataclass
 from pushpluck import constants
-from pushpluck.component import ComponentState, NullConfig, NullConfigComponent
-from pushpluck.config import Config
+from pushpluck.component import NullConfigComponent
 from typing import List
 
 
 @dataclass
-class MenuState(ComponentState[NullConfig]):
-    pass
-
+class MenuState:
     @classmethod
-    def initialize(cls, config: NullConfig) -> 'MenuState':
+    def default(cls) -> 'MenuState':
         return cls()
 
 
@@ -21,14 +18,10 @@ class MenuMessage:
     text: str
 
 
-class Menu(NullConfigComponent[MenuState, List[MenuMessage]]):
-    @classmethod
-    def construct(cls, root_config: Config) -> 'Menu':
-        return cls(cls.extract_config(root_config))
-
-    @classmethod
-    def initialize_state(cls, config: NullConfig) -> MenuState:
-        return MenuState.initialize(config)
+class Menu(NullConfigComponent[List[MenuMessage]]):
+    def __init__(self):
+        super().__init__()
+        self._state = MenuState.default()
 
     def handle_reset(self) -> List[MenuMessage]:
         # TODO actually redraw screen

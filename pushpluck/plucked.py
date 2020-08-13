@@ -2,12 +2,12 @@ from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.config import ColorScheme, Config
-from pushpluck.fretboard import Fretboard, FretMessage
+from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
 from pushpluck.menu import Menu, MenuMessage
 from pushpluck.midi import is_note_msg, MidiSink
-from pushpluck.pads import Pads, PadsMessage
+from pushpluck.pads import Pads, PadsConfig, PadsMessage
 from pushpluck.push import PushOutput
-from pushpluck.viewport import Viewport
+from pushpluck.viewport import Viewport, ViewportConfig
 from typing import List
 
 import logging
@@ -24,10 +24,10 @@ class Plucked(Resettable):
         self._push = push
         self._midi_processed = midi_processed
         self._config = config
-        self._fretboard = Fretboard.construct(config)
-        self._viewport = Viewport.construct(config)
-        self._pads = Pads(scheme, self._fretboard, self._viewport, config)
-        self._menu = Menu.construct(config)
+        self._fretboard = Fretboard(FretboardConfig.extract(config))
+        self._viewport = Viewport(ViewportConfig.extract(config))
+        self._pads = Pads(scheme, self._fretboard, self._viewport, PadsConfig.extract(config))
+        self._menu = Menu()
 
     def handle_config(self, config: Config) -> None:
         if config != self._config:

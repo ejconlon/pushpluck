@@ -5,7 +5,6 @@ from typing import Generic, Optional, Type, TypeVar
 
 
 C = TypeVar('C', bound='ComponentConfig')
-S = TypeVar('S', bound='ComponentState')
 R = TypeVar('R')
 K = TypeVar('K', bound='Component')
 
@@ -26,36 +25,14 @@ class NullConfig(ComponentConfig):
         return cls()
 
 
-class ComponentState(Generic[C], metaclass=ABCMeta):
-    @classmethod
-    @abstractmethod
-    def initialize(cls: Type[S], config: C) -> S:
-        raise NotImplementedError()
-
-
-@dataclass
-class NullState(ComponentState[C]):
-    pass
-
-    @classmethod
-    def initialize(cls, config: C) -> 'NullState':
-        return cls()
-
-
-class Component(Generic[C, S, R], metaclass=ABCMeta):
+class Component(Generic[C, R], metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def extract_config(cls: Type[K], root_config: Config) -> C:
         raise NotImplementedError()
 
-    @classmethod
-    @abstractmethod
-    def initialize_state(cls: Type[K], config: C) -> S:
-        raise NotImplementedError()
-
     def __init__(self, config: C) -> None:
         self._config = config
-        self._state = type(self).initialize_state(config)
 
     @abstractmethod
     def handle_reset(self) -> R:
@@ -76,10 +53,13 @@ class Component(Generic[C, S, R], metaclass=ABCMeta):
             return None
 
 
-class NullConfigComponent(Component[NullConfig, S, R]):
+class NullConfigComponent(Component[NullConfig, R]):
     @classmethod
     def extract_config(cls: Type[K], root_config: Config) -> NullConfig:
-        return NullConfig.extract(root_config)
+        return NullConfig()
+
+    def __init__(self) -> None:
+        super().__init__(NullConfig())
 
     def internal_handle_config(self, config: C) -> R:
         return self.handle_reset()
