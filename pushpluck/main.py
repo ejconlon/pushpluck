@@ -21,6 +21,8 @@ def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
         while True:
             msg = ports.midi_in.recv_msg()
             plucked.handle_msg(msg)
+    except KeyboardInterrupt:
+        pass
     finally:
         # Send all notes off
         logging.info('final all notes off')

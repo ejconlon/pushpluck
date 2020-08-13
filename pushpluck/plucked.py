@@ -3,6 +3,7 @@ from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.config import Config, NoteType, PadColor
 from pushpluck.fretboard import Fretboard, FretMessage
+from pushpluck.menu import Menu, MenuMessage
 from pushpluck.midi import is_note_msg, MidiSink
 from pushpluck.pos import Pos
 from pushpluck.push import PushOutput
@@ -28,6 +29,7 @@ class Plucked(Resettable):
         self._pad_colors: Dict[Pos, PadColor] = {}
         self._fretboard = Fretboard.construct(config)
         self._viewport = Viewport.construct(config)
+        self._menu = Menu.construct(config)
         self._reset_pad_colors()
 
     def handle_config(self, config: Config) -> None:
@@ -35,10 +37,15 @@ class Plucked(Resettable):
             self._config = config
             # Send note offs first to map back to pads correctly
             fret_msgs = self._fretboard.handle_root_config(config)
-            self._handle_fret_msgs(fret_msgs)
+            if fret_msgs is not None:
+                self._handle_fret_msgs(fret_msgs)
             self._viewport.handle_root_config(config)
             # Then reset pads
             self._reset_pad_colors()
+            # And reset screen
+            menu_msgs = self._menu.handle_root_config(config)
+            if menu_msgs is not None:
+                self._handle_menu_msgs(menu_msgs)
 
     def _make_pad_color(self, classifier: ScaleClassifier, pos: Pos) -> PadColor:
         pad_color: PadColor
@@ -96,6 +103,11 @@ class Plucked(Resettable):
                 self._set_pad_pressed(pad_pos, fret_msg.is_sounding())
             self._midi_processed.send_msg(fret_msg.msg)
 
+    def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:
+        lcd = self._push.get_lcd()
+        for menu_msg in menu_msgs:
+            lcd.display_block(menu_msg.row, menu_msg.block_col, menu_msg.text)
+
     def reset(self) -> None:
         # Send note offs
         logging.info('plucked resetting fretboard')
@@ -104,10 +116,8 @@ class Plucked(Resettable):
 
         # Update LCD
         logging.info('plucked resetting controller lcd')
-        lcd = self._push.get_lcd()
-        for row in range(constants.DISPLAY_MAX_ROWS):
-            for block_col in range(constants.DISPLAY_MAX_BLOCKS):
-                lcd.display_block(row, block_col, '0123456789ABCDEF!')
+        menu_msgs = self._menu.handle_reset()
+        self._handle_menu_msgs(menu_msgs)
 
         logging.info('plucked resetting pads')
         for pos in Pos.iter_all():

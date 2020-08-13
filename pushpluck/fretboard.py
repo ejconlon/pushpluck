@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck.config import Config
 from pushpluck.midi import is_note_on_msg
+from pushpluck.component import Component, ComponentConfig, ComponentState
 from typing import Dict, List, Optional, Tuple
 
 
@@ -65,7 +66,7 @@ class FretMessage:
 
 
 @dataclass(frozen=True)
-class FretboardConfig:
+class FretboardConfig(ComponentConfig):
     tuning: List[int]
     min_velocity: int
 
@@ -78,7 +79,7 @@ class FretboardConfig:
 
 
 @dataclass
-class FretboardState:
+class FretboardState(ComponentState[FretboardConfig]):
     fingered: List[ChokeGroup]
 
     @classmethod
@@ -88,15 +89,14 @@ class FretboardState:
         )
 
 
-class Fretboard:
+class Fretboard(Component[FretboardConfig, FretboardState, List[FretMessage]]):
     @classmethod
-    def construct(cls, root_config: Config) -> 'Fretboard':
-        config = FretboardConfig.extract(root_config)
-        return cls(config)
+    def extract_config(cls, root_config: Config) -> FretboardConfig:
+        return FretboardConfig.extract(root_config)
 
-    def __init__(self, config: FretboardConfig) -> None:
-        self._config = config
-        self._state = FretboardState.initialize(config)
+    @classmethod
+    def initialize_state(cls, config: FretboardConfig) -> FretboardState:
+        return FretboardState.initialize(config)
 
     def get_note(self, str_pos: StringPos) -> int:
         return self._config.tuning[str_pos.str_index] + str_pos.fret
@@ -175,18 +175,11 @@ class Fretboard:
                 out_msgs.append(self._emit_fret_msg(str_index, off_msg))
         return out_msgs
 
-    def handle_config(self, config: FretboardConfig) -> List[FretMessage]:
-        if config != self._config:
-            out_msgs = self._note_offs()
-            self._config = config
-            self._state = FretboardState.initialize(config)
-            return out_msgs
-        else:
-            return []
-
-    def handle_root_config(self, root_config: Config) -> List[FretMessage]:
-        config = FretboardConfig.extract(root_config)
-        return self.handle_config(config)
+    def internal_handle_config(self, config: FretboardConfig) -> List[FretMessage]:
+        out_msgs = self._note_offs()
+        self._config = config
+        self._state = FretboardState.initialize(config)
+        return out_msgs
 
     def handle_reset(self) -> List[FretMessage]:
         out_msgs = self._note_offs()
