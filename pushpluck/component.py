@@ -53,15 +53,9 @@ class Component(Generic[C, S, R], metaclass=ABCMeta):
     def initialize_state(cls: Type[K], config: C) -> S:
         raise NotImplementedError()
 
-    @classmethod
-    def construct(cls: Type[K], root_config: Config) -> K:
-        config = cls.extract_config(root_config)
-        state = cls.initialize_state(config)
-        return cls(config, state)
-
-    def __init__(self, config: C, state: S) -> None:
+    def __init__(self, config: C) -> None:
         self._config = config
-        self._state = state
+        self._state = type(self).initialize_state(config)
 
     @abstractmethod
     def handle_reset(self) -> R:

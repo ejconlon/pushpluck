@@ -1,11 +1,8 @@
 from dataclasses import dataclass
 from pushpluck import constants
 from pushpluck.component import ComponentState, NullConfig, NullConfigComponent
+from pushpluck.config import Config
 from typing import List
-
-
-class Profiles:
-    pass
 
 
 @dataclass
@@ -25,6 +22,10 @@ class MenuMessage:
 
 
 class Menu(NullConfigComponent[MenuState, List[MenuMessage]]):
+    @classmethod
+    def construct(cls, root_config: Config) -> 'Menu':
+        return cls(cls.extract_config(root_config))
+
     @classmethod
     def initialize_state(cls, config: NullConfig) -> MenuState:
         return MenuState.initialize(config)

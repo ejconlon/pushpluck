@@ -83,12 +83,15 @@ class Orientation(Enum):
     Up = auto()
 
 
-@dataclass(frozen=True)
-class Profile:
-    instrument_name: str
-    tuning_name: str
-    tuning: List[int]
-    orientation: Orientation
+# TODO This needs to be hierarchical
+# Each instrument has a default orientation and tuning
+# As well as multiple possible tunings
+# @dataclass(frozen=True)
+# class Profile:
+#     instrument_name: str
+#     tuning_name: str
+#     tuning: List[int]
+#     orientation: Orientation
 
 
 @dataclass(frozen=True)
@@ -99,7 +102,6 @@ class Config:
     orientation: Orientation
     scale: Scale
     root: NoteName
-    scheme: ColorScheme
     min_velocity: int
 
 
@@ -111,14 +113,17 @@ def init_config(min_velocity: int) -> Config:
         orientation=Orientation.Left,
         scale=SCALE_LOOKUP['Major'],
         root=NoteName.C,
-        scheme=ColorScheme(
-            root_note=COLORS['Blue'],
-            member_note=COLORS['White'],
-            other_note=COLORS['Gray'],
-            pressed_note=COLORS['Green'],
-            misc_pressed=COLORS['Sky'],
-            control=COLORS['Yellow'],
-            control_pressed=COLORS['Green']
-        ),
         min_velocity=min_velocity
+    )
+
+
+def default_scheme() -> ColorScheme:
+    return ColorScheme(
+        root_note=COLORS['Blue'],
+        member_note=COLORS['White'],
+        other_note=COLORS['Gray'],
+        pressed_note=COLORS['Green'],
+        misc_pressed=COLORS['Sky'],
+        control=COLORS['Yellow'],
+        control_pressed=COLORS['Green']
     )

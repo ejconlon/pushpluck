@@ -1,4 +1,6 @@
+from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
+from pushpluck.component import Component, ComponentConfig, ComponentState
 from pushpluck.config import Config, Orientation
 from pushpluck.fretboard import StringPos
 from pushpluck.pos import Pos
@@ -6,7 +8,7 @@ from typing import Optional
 
 
 @dataclass(frozen=True)
-class ViewportConfig:
+class ViewportConfig(ComponentConfig):
     num_strings: int
     orientation: Orientation
 
@@ -19,7 +21,7 @@ class ViewportConfig:
 
 
 @dataclass
-class ViewportState:
+class ViewportState(ComponentState[ViewportConfig]):
     str_offset: int
     fret_offset: int
 
@@ -31,20 +33,28 @@ class ViewportState:
         )
 
 
-class Viewport:
+class ViewportQueries(metaclass=ABCMeta):
+    @abstractmethod
+    def str_pos_from_pad_pos(self, pos: Pos) -> Optional[StringPos]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def str_pos_from_input_note(self, note: int) -> Optional[StringPos]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def pad_pos_from_str_pos(self, str_pos: StringPos) -> Optional[Pos]:
+        raise NotImplementedError()
+
+
+class Viewport(Component[ViewportConfig, ViewportState, None], ViewportQueries):
     @classmethod
     def construct(cls, root_config: Config) -> 'Viewport':
-        config = ViewportConfig.extract(root_config)
-        return cls(config)
+        return cls(cls.extract_config(root_config))
 
-    def __init__(self, config: ViewportConfig) -> None:
+    def handle_internal_config(self, config: ViewportConfig) -> None:
         self._config = config
-        self._state = ViewportState.initialize(config)
-
-    def handle_config(self, config: ViewportConfig) -> None:
-        if config != self._config:
-            self._config = config
-            self.handle_reset()
+        self.handle_reset()
 
     def handle_root_config(self, root_config: Config) -> None:
         config = ViewportConfig.extract(root_config)

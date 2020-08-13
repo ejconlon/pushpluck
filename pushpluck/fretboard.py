@@ -1,3 +1,4 @@
+from abc import ABCMeta, abstractmethod
 from bisect import bisect_left
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
@@ -89,7 +90,17 @@ class FretboardState(ComponentState[FretboardConfig]):
         )
 
 
-class Fretboard(Component[FretboardConfig, FretboardState, List[FretMessage]]):
+class FretboardQueries(metaclass=ABCMeta):
+    @abstractmethod
+    def get_note(self, str_pos: StringPos) -> int:
+        raise NotImplementedError()
+
+
+class Fretboard(Component[FretboardConfig, FretboardState, List[FretMessage]], FretboardQueries):
+    @classmethod
+    def construct(cls, root_config: Config) -> 'Fretboard':
+        return cls(cls.extract_config(root_config))
+
     @classmethod
     def extract_config(cls, root_config: Config) -> FretboardConfig:
         return FretboardConfig.extract(root_config)

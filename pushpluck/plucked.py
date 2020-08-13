@@ -1,36 +1,33 @@
 from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
-from pushpluck.config import Config, NoteType, PadColor
+from pushpluck.config import ColorScheme, Config
 from pushpluck.fretboard import Fretboard, FretMessage
 from pushpluck.menu import Menu, MenuMessage
 from pushpluck.midi import is_note_msg, MidiSink
-from pushpluck.pos import Pos
+from pushpluck.pads import Pads, PadsMessage
 from pushpluck.push import PushOutput
-from pushpluck.scale import ScaleClassifier, name_and_octave_from_note
 from pushpluck.viewport import Viewport
-from typing import Dict, List
+from typing import List
 
 import logging
 
 
 class Plucked(Resettable):
-    # TODO split into create and init
-    # This is really horrible
     def __init__(
         self,
         push: PushOutput,
         midi_processed: MidiSink,
+        scheme: ColorScheme,
         config: Config,
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
         self._config = config
-        self._pad_colors: Dict[Pos, PadColor] = {}
         self._fretboard = Fretboard.construct(config)
         self._viewport = Viewport.construct(config)
+        self._pads = Pads(scheme, self._fretboard, self._viewport, config)
         self._menu = Menu.construct(config)
-        self._reset_pad_colors()
 
     def handle_config(self, config: Config) -> None:
         if config != self._config:
@@ -40,46 +37,14 @@ class Plucked(Resettable):
             if fret_msgs is not None:
                 self._handle_fret_msgs(fret_msgs)
             self._viewport.handle_root_config(config)
-            # Then reset pads
-            self._reset_pad_colors()
-            # And reset screen
+            # Then reset screen
             menu_msgs = self._menu.handle_root_config(config)
             if menu_msgs is not None:
                 self._handle_menu_msgs(menu_msgs)
-
-    def _make_pad_color(self, classifier: ScaleClassifier, pos: Pos) -> PadColor:
-        pad_color: PadColor
-        str_pos = self._viewport.str_pos_from_pad_pos(pos)
-        if str_pos is None:
-            return PadColor.misc(False)
-        else:
-            note = self._fretboard.get_note(str_pos)
-            name, _ = name_and_octave_from_note(note)
-            note_type: NoteType
-            if classifier.is_root(name):
-                note_type = NoteType.Root
-            elif classifier.is_member(name):
-                note_type = NoteType.Member
-            else:
-                note_type = NoteType.Other
-            return PadColor.note(note_type)
-
-    def _reset_pad_colors(self) -> None:
-        classifier = self._config.scale.to_classifier(self._config.root)
-        self._pad_colors = {
-            pos: self._make_pad_color(classifier, pos) for pos in Pos.iter_all()
-        }
-
-    def _set_pad_pressed(self, pos: Pos, pressed: bool) -> None:
-        pad_color = self._pad_colors[pos]
-        color = pad_color.get_color(self._config.scheme, pressed)
-        pad_output = self._push.get_pad(pos)
-        if color is None:
-            pad_output.led_off()
-        else:
-            pad_output.set_color(color)
-            # Apparently color and led on are incompatible
-            # pad_output.led_on_max()
+            # And reset pads
+            pads_msgs = self._pads.handle_root_config(config)
+            if pads_msgs is not None:
+                self._handle_pads_msgs(pads_msgs)
 
     def handle_msg(self, msg: FrozenMessage) -> None:
         reset = msg.type == 'control_change' \
@@ -100,13 +65,21 @@ class Plucked(Resettable):
         for fret_msg in fret_msgs:
             pad_pos = self._viewport.pad_pos_from_str_pos(fret_msg.str_pos)
             if pad_pos is not None:
-                self._set_pad_pressed(pad_pos, fret_msg.is_sounding())
+                self._pads.set_pad_pressed(pad_pos, fret_msg.is_sounding())
             self._midi_processed.send_msg(fret_msg.msg)
 
     def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:
         lcd = self._push.get_lcd()
         for menu_msg in menu_msgs:
             lcd.display_block(menu_msg.row, menu_msg.block_col, menu_msg.text)
+
+    def _handle_pads_msgs(self, pads_msgs: List[PadsMessage]) -> None:
+        for pads_msg in pads_msgs:
+            pad = self._push.get_pad(pads_msg.pos)
+            if pads_msg.color is None:
+                pad.led_off()
+            else:
+                pad.set_color(pads_msg.color)
 
     def reset(self) -> None:
         # Send note offs
@@ -119,6 +92,7 @@ class Plucked(Resettable):
         menu_msgs = self._menu.handle_reset()
         self._handle_menu_msgs(menu_msgs)
 
+        # Update pads
         logging.info('plucked resetting pads')
-        for pos in Pos.iter_all():
-            self._set_pad_pressed(pos, False)
+        pads_msgs = self._pads.handle_reset()
+        self._handle_pads_msgs(pads_msgs)
