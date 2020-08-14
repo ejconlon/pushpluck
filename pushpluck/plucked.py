@@ -1,12 +1,11 @@
-from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.config import ColorScheme, Config
 from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
 from pushpluck.menu import Menu, MenuMessage
-from pushpluck.midi import is_note_msg, MidiSink
+from pushpluck.midi import MidiSink
 from pushpluck.pads import Pads, PadsConfig, PadsMessage
-from pushpluck.push import PushOutput
+from pushpluck.push import PadEvent, ButtonEvent, PushEvent, PushOutput
 from pushpluck.viewport import Viewport, ViewportConfig
 from typing import List
 
@@ -46,20 +45,18 @@ class Plucked(Resettable):
             if pads_msgs is not None:
                 self._handle_pads_msgs(pads_msgs)
 
-    def handle_msg(self, msg: FrozenMessage) -> None:
-        reset = msg.type == 'control_change' \
-                and msg.control == constants.ButtonCC.Master.value \
-                and msg.value == 0
-        if reset:
-            self.reset()
-        elif is_note_msg(msg):
-            str_pos = self._viewport.str_pos_from_input_note(msg.note)
+    def handle_event(self, event: PushEvent) -> None:
+        if isinstance(event, PadEvent):
+            str_pos = self._viewport.str_pos_from_pad_pos(event.pos)
             if str_pos is not None:
-                fret_msgs = self._fretboard.handle_note(str_pos, msg.velocity)
+                fret_msgs = self._fretboard.handle_note(str_pos, event.velocity)
                 self._handle_fret_msgs(fret_msgs)
-        elif msg.type == 'polytouch':
-            # TODO send polytouch
-            pass
+        elif isinstance(event, ButtonEvent) and event.button == constants.ButtonCC.Master:
+            if event.pressed:
+                self.reset()
+        else:
+            menu_msgs = self._menu.handle_event(event)
+            self._handle_menu_msgs(menu_msgs)
 
     def _handle_fret_msgs(self, fret_msgs: List[FretMessage]) -> None:
         for fret_msg in fret_msgs:
@@ -70,17 +67,16 @@ class Plucked(Resettable):
             self._midi_processed.send_msg(fret_msg.msg)
 
     def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:
-        lcd = self._push.get_lcd()
         for menu_msg in menu_msgs:
-            lcd.display_block(menu_msg.row, menu_msg.block_col, menu_msg.text)
+            pass
+            # self._push.lcd_display_block(menu_msg.row, menu_msg.block_col, menu_msg.text)
 
     def _handle_pads_msgs(self, pads_msgs: List[PadsMessage]) -> None:
         for pads_msg in pads_msgs:
-            pad = self._push.get_pad(pads_msg.pos)
             if pads_msg.color is None:
-                pad.led_off()
+                self._push.pad_led_off(pads_msg.pos)
             else:
-                pad.set_color(pads_msg.color)
+                self._push.pad_set_color(pads_msg.pos, pads_msg.color)
 
     def reset(self) -> None:
         # Send note offs

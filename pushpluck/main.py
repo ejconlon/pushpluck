@@ -2,7 +2,7 @@ from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.config import default_scheme, init_config
 from pushpluck.plucked import Plucked
-from pushpluck.push import push_ports_context, PushOutput, PushPorts
+from pushpluck.push import match_event, push_ports_context, PushOutput, PushPorts
 
 import logging
 
@@ -21,7 +21,9 @@ def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
         logging.info('controller ready')
         while True:
             msg = ports.midi_in.recv_msg()
-            plucked.handle_msg(msg)
+            event = match_event(msg)
+            if event is not None:
+                plucked.handle_event(event)
     except KeyboardInterrupt:
         pass
     finally:

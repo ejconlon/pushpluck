@@ -16,5 +16,6 @@ You can run the `pushpluck.main` module with Python or simply run `./run.sh` to 
 
 ## Thanks
 
-Thanks to [push-wrapper](https://github.com/crosslandwa/push-wrapper) (MIT license) for the examples!
-Thanks to [Julien Bayle](https://julienbayle.studio/ableton-live-push/) for the info/graphics!
+Thanks to [push-wrapper](https://github.com/crosslandwa/push-wrapper) (MIT license) for the examples.
+
+Thanks to [Julien Bayle](https://julienbayle.studio/ableton-live-push/) for the info/graphics.
