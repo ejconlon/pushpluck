@@ -1,11 +1,11 @@
-from pushpluck import constants
 from pushpluck.base import Resettable
 from pushpluck.config import ColorScheme, Config
+from pushpluck.constants import ButtonCC
 from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
-from pushpluck.menu import Menu, MenuMessage
+from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage
 from pushpluck.midi import MidiSink
 from pushpluck.pads import Pads, PadsConfig, PadsMessage
-from pushpluck.push import PadEvent, ButtonEvent, PushEvent, PushOutput
+from pushpluck.push import ButtonEvent, PadEvent, PushEvent, PushOutput
 from pushpluck.viewport import Viewport, ViewportConfig
 from typing import List
 
@@ -51,7 +51,7 @@ class Plucked(Resettable):
             if str_pos is not None:
                 fret_msgs = self._fretboard.handle_note(str_pos, event.velocity)
                 self._handle_fret_msgs(fret_msgs)
-        elif isinstance(event, ButtonEvent) and event.button == constants.ButtonCC.Master:
+        elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Master:
             if event.pressed:
                 self.reset()
         else:
@@ -68,8 +68,20 @@ class Plucked(Resettable):
 
     def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:
         for menu_msg in menu_msgs:
-            pass
-            # self._push.lcd_display_block(menu_msg.row, menu_msg.block_col, menu_msg.text)
+            print('checking menu msg', menu_msg)
+            if isinstance(menu_msg, ClearMessage):
+                self._push.lcd_reset()
+                self._push.chan_sel_reset()
+                self._push.grid_sel_reset()
+                self._push.button_reset()
+            elif isinstance(menu_msg, ButtonLedMessage):
+                if menu_msg.illum is None:
+                    self._push.button_off(menu_msg.button)
+                else:
+                    self._push.button_set_illum(menu_msg.button, menu_msg.illum)
+            else:
+                print('TODO unahandled menu msg', menu_msg)
+                pass
 
     def _handle_pads_msgs(self, pads_msgs: List[PadsMessage]) -> None:
         for pads_msg in pads_msgs:
@@ -84,8 +96,8 @@ class Plucked(Resettable):
         fret_msgs = self._fretboard.handle_reset()
         self._handle_fret_msgs(fret_msgs)
 
-        # Update LCD
-        logging.info('plucked resetting controller lcd')
+        # Update menu (LCD and buttons)
+        logging.info('plucked resetting menu')
         menu_msgs = self._menu.handle_reset()
         self._handle_menu_msgs(menu_msgs)
 

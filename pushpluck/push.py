@@ -5,6 +5,7 @@ from mido.frozen import FrozenMessage
 from pushpluck import constants
 from pushpluck.base import Closeable, Resettable
 from pushpluck.color import COLORS, Color
+from pushpluck.constants import ButtonCC, ButtonColor, ButtonIllum, KnobCC, KnobGroup, TimeDivCC
 from pushpluck.midi import MidiInput, MidiOutput, is_note_msg
 from pushpluck.pos import ChanSelPos, GridSelPos, Pos
 from typing import Generator, List, Optional, Type, TypeVar
@@ -52,8 +53,8 @@ class PushEvent(metaclass=ABCMeta):
 
 @dataclass(frozen=True)
 class KnobEvent(PushEvent):
-    knob: constants.KnobCC
-    group: constants.KnobGroup
+    knob: KnobCC
+    group: KnobGroup
     offset: int
     clockwise: bool
 
@@ -69,7 +70,7 @@ class KnobEvent(PushEvent):
 
 @dataclass(frozen=True)
 class ButtonEvent(PushEvent):
-    button: constants.ButtonCC
+    button: ButtonCC
     pressed: bool
 
     @classmethod
@@ -265,36 +266,27 @@ class PushOutput(Resettable):
         for row in range(constants.DISPLAY_MAX_ROWS):
             self.lcd_display_line(row, '')
 
-    def button_set_illum(
-        self,
-        button: constants.ButtonCC,
-        illum: constants.ButtonIllum
-    ) -> None:
+    def button_set_illum(self, button: ButtonCC, illum: ButtonIllum) -> None:
         msg = FrozenMessage(type='control_change', control=button.value, value=illum.value)
         self._midi_out.send_msg(msg)
 
-    def button_off(self, button: constants.ButtonCC) -> None:
+    def button_off(self, button: ButtonCC) -> None:
         msg = FrozenMessage(type='control_change', control=button.value, value=0)
         self._midi_out.send_msg(msg)
 
     def button_reset(self) -> None:
-        for button in constants.ButtonCC:
+        for button in ButtonCC:
             self.button_off(button)
 
-    def time_div_off(self, time_div: constants.TimeDivCC) -> None:
+    def time_div_off(self, time_div: TimeDivCC) -> None:
         # TODO
         pass
 
     def time_div_reset(self) -> None:
-        for time_div in constants.TimeDivCC:
+        for time_div in TimeDivCC:
             self.time_div_off(time_div)
 
-    def chan_sel_set_color(
-        self,
-        cs_pos: ChanSelPos,
-        illum: constants.ButtonIllum,
-        color: constants.ButtonColor
-    ) -> None:
+    def chan_sel_set_color(self, cs_pos: ChanSelPos, illum: ButtonIllum, color: ButtonColor) -> None:
         # TODO
         pass
 
