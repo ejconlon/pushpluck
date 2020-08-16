@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck.config import Config
 from pushpluck.midi import is_note_on_msg
-from pushpluck.component import Component, ComponentConfig, ComponentMessage
+from pushpluck.component import MappedComponent, MappedComponentConfig, ComponentMessage
 from typing import Dict, List, Optional, Tuple
 
 
@@ -55,7 +55,13 @@ class StringPos:
 
 
 @dataclass(frozen=True)
-class FretMessage(ComponentMessage):
+class TriggerEvent:
+    str_pos: StringPos
+    velocity: int
+
+
+@dataclass(frozen=True)
+class FretboardMessage(ComponentMessage):
     # Position on strings/frets
     str_pos: StringPos
     # An underlying message relevant to the fretted note (on, off, aftertouch)
@@ -66,7 +72,7 @@ class FretMessage(ComponentMessage):
 
 
 @dataclass(frozen=True)
-class FretboardConfig(ComponentConfig):
+class FretboardConfig(MappedComponentConfig):
     tuning: List[int]
     min_velocity: int
 
@@ -89,7 +95,11 @@ class FretboardState:
         )
 
 
-class Fretboard(Component[FretboardConfig, FretMessage]):
+class Fretboard(MappedComponent[Config, FretboardConfig, TriggerEvent, FretboardMessage]):
+    @classmethod
+    def construct(cls, root_config: Config) -> 'Fretboard':
+        return cls(cls.extract_config(root_config))
+
     @classmethod
     def extract_config(cls, root_config: Config) -> FretboardConfig:
         return FretboardConfig.extract(root_config)
@@ -104,9 +114,9 @@ class Fretboard(Component[FretboardConfig, FretMessage]):
     def _get_fret(self, str_index: int, note: int) -> int:
         return note - self._config.tuning[str_index]
 
-    def _emit_fret_msg(self, str_index: int, msg: FrozenMessage) -> FretMessage:
+    def _emit_fret_msg(self, str_index: int, msg: FrozenMessage) -> FretboardMessage:
         assert msg.note is not None
-        return FretMessage(
+        return FretboardMessage(
             str_pos=StringPos(
                 str_index=str_index,
                 fret=self._get_fret(str_index, msg.note)
@@ -120,20 +130,20 @@ class Fretboard(Component[FretboardConfig, FretMessage]):
         else:
             return max(velocity, self._config.min_velocity)
 
-    def handle_note(self, str_pos: StringPos, velocity: int) -> List[FretMessage]:
+    def handle_event(self, event: TriggerEvent) -> List[FretboardMessage]:
         # Find out note from fret
-        fret_note = self.get_note(str_pos)
+        fret_note = self.get_note(event.str_pos)
 
         # Lookup choke group and find prev max note
-        group = self._state.fingered[str_pos.str_index]
+        group = self._state.fingered[event.str_pos.str_index]
         prev_note_and_info = group.max_note_and_info()
 
         # Add note to group and find cur max note
-        group.pluck(fret_note, velocity)
+        group.pluck(fret_note, event.velocity)
         cur_note_and_info = group.max_note_and_info()
 
         # Return control messages
-        out_msgs: List[FretMessage] = []
+        out_msgs: List[FretboardMessage] = []
         if cur_note_and_info is None:
             if prev_note_and_info is None:
                 # No notes - huh? (ignore)
@@ -142,14 +152,14 @@ class Fretboard(Component[FretboardConfig, FretMessage]):
                 # Single note mute - send off for prev
                 prev_note, _ = prev_note_and_info
                 off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                out_msgs.append(self._emit_fret_msg(str_pos.str_index, off_msg))
+                out_msgs.append(self._emit_fret_msg(event.str_pos.str_index, off_msg))
         else:
             cur_note, cur_info = cur_note_and_info
             if prev_note_and_info is None:
                 # Single note pluck - send on for cur
                 velocity = self._clamp_velocity(cur_info.velocity)
                 on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
-                out_msgs.append(self._emit_fret_msg(str_pos.str_index, on_msg))
+                out_msgs.append(self._emit_fret_msg(event.str_pos.str_index, on_msg))
             else:
                 prev_note, _ = prev_note_and_info
                 if prev_note == cur_note:
@@ -160,13 +170,13 @@ class Fretboard(Component[FretboardConfig, FretMessage]):
                     # Send on before off to maintain overlap for envelopes?
                     velocity = self._clamp_velocity(cur_info.velocity)
                     on_msg = FrozenMessage(type='note_on', note=cur_note, velocity=velocity)
-                    out_msgs.append(self._emit_fret_msg(str_pos.str_index, on_msg))
+                    out_msgs.append(self._emit_fret_msg(event.str_pos.str_index, on_msg))
                     off_msg = FrozenMessage(type='note_on', note=prev_note, velocity=0)
-                    out_msgs.append(self._emit_fret_msg(str_pos.str_index, off_msg))
+                    out_msgs.append(self._emit_fret_msg(event.str_pos.str_index, off_msg))
         return out_msgs
 
-    def _note_offs(self) -> List[FretMessage]:
-        out_msgs: List[FretMessage] = []
+    def _note_offs(self) -> List[FretboardMessage]:
+        out_msgs: List[FretboardMessage] = []
         for str_index, group in enumerate(self._state.fingered):
             cur_note_and_info = group.max_note_and_info()
             if cur_note_and_info is not None:
@@ -175,7 +185,7 @@ class Fretboard(Component[FretboardConfig, FretMessage]):
                 out_msgs.append(self._emit_fret_msg(str_index, off_msg))
         return out_msgs
 
-    def internal_handle_config(self, config: FretboardConfig) -> List[FretMessage]:
+    def handle_mapped_config(self, config: FretboardConfig) -> List[FretboardMessage]:
         out_msgs = self._note_offs()
         self._config = config
         self._state = FretboardState.initialize(config)

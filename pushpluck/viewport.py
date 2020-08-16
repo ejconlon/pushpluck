@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pushpluck import constants
-from pushpluck.component import Component, ComponentConfig, NullComponentMessage
+from pushpluck.base import Void
+from pushpluck.component import MappedComponent, MappedComponentConfig, VoidComponentMessage
 from pushpluck.config import Config, Orientation
 from pushpluck.fretboard import StringPos
 from pushpluck.pos import Pos
@@ -8,7 +9,7 @@ from typing import List, Optional
 
 
 @dataclass(frozen=True)
-class ViewportConfig(ComponentConfig):
+class ViewportConfig(MappedComponentConfig):
     num_strings: int
     orientation: Orientation
     str_offset: int
@@ -24,15 +25,19 @@ class ViewportConfig(ComponentConfig):
         )
 
 
-class Viewport(Component[ViewportConfig, NullComponentMessage]):
+class Viewport(MappedComponent[Config, ViewportConfig, Void, VoidComponentMessage]):
+    @classmethod
+    def construct(cls, root_config: Config) -> 'Viewport':
+        return cls(cls.extract_config(root_config))
+
     @classmethod
     def extract_config(cls, root_config: Config) -> ViewportConfig:
         return ViewportConfig.extract(root_config)
 
-    def __init__(self, config: ViewportConfig) -> None:
-        super().__init__(config)
+    def handle_event(self, event: Void) -> List[VoidComponentMessage]:
+        return event.absurd()
 
-    def internal_handle_config(self, config: ViewportConfig) -> List[NullComponentMessage]:
+    def handle_mapped_config(self, config: ViewportConfig) -> List[VoidComponentMessage]:
         self._config = config
         return []
 

@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum, auto, unique
+from pushpluck.base import Void
 from pushpluck.constants import ButtonCC, ButtonIllum
-from pushpluck.component import ComponentMessage, NullConfigComponent
+from pushpluck.component import Component, ComponentMessage
 from pushpluck.push import PushEvent, ButtonEvent
 from typing import List, Optional
 
@@ -108,9 +109,8 @@ class MenuState:
         return cls(Page.Device)
 
 
-class Menu(NullConfigComponent[MenuMessage]):
+class Menu(Component[Void, PushEvent, MenuMessage]):
     def __init__(self):
-        super().__init__()
         self._state = MenuState.default()
 
     def handle_reset(self) -> List[MenuMessage]:
@@ -137,5 +137,7 @@ class Menu(NullConfigComponent[MenuMessage]):
                     return [StringShiftMessage(-1)]
             else:
                 return []
-        print('TODO unhandled event', event)
         return []
+
+    def handle_config(self, config: Void) -> List[MenuMessage]:
+        return config.absurd()

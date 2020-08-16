@@ -1,78 +1,64 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
-from pushpluck.config import Config
-from typing import Generic, List, Optional, Type, TypeVar
+from pushpluck.base import Void
+from typing import Generic, List, Type, TypeVar
 
 
-C = TypeVar('C', bound='ComponentConfig')
-E = TypeVar('E', bound='ComponentConfig')
+C = TypeVar('C')
+X = TypeVar('X', bound='MappedComponentConfig')
+E = TypeVar('E')
 M = TypeVar('M', bound='ComponentMessage')
 K = TypeVar('K', bound='Component')
 
 
-class ComponentConfig(metaclass=ABCMeta):
+class MappedComponentConfig(Generic[C], metaclass=ABCMeta):
     @classmethod
     @abstractmethod
-    def extract(cls: Type[C], root_config: Config) -> C:
+    def extract(cls: Type[X], root_config: C) -> X:
         raise NotImplementedError()
-
-
-@dataclass(frozen=True)
-class NullConfig(ComponentConfig):
-    pass
-
-    @classmethod
-    def extract(cls, root_config: Config) -> 'NullConfig':
-        return cls()
 
 
 class ComponentMessage:
     pass
 
 
-@dataclass(frozen=True)
-class NullComponentMessage(ComponentMessage):
-    pass
+class VoidComponentMessage(Void, ComponentMessage):
+    def __init__(self):
+        super(Void, self).__init__()
 
 
-class Component(Generic[C, M], metaclass=ABCMeta):
-    @classmethod
+class Component(Generic[C, E, M], metaclass=ABCMeta):
     @abstractmethod
-    def extract_config(cls: Type[K], root_config: Config) -> C:
+    def handle_event(self, event: E) -> List[M]:
         raise NotImplementedError()
 
-    def __init__(self, config: C) -> None:
+    @abstractmethod
+    def handle_reset(self) -> List[M]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def handle_config(self, config: C) -> List[M]:
+        raise NotImplementedError()
+
+
+class MappedComponent(Generic[C, X, E, M], Component[C, E, M]):
+    @classmethod
+    @abstractmethod
+    def extract_config(cls: Type[K], root_config: C) -> X:
+        raise NotImplementedError()
+
+    def __init__(self, config: X) -> None:
         self._config = config
 
     @abstractmethod
-    def internal_handle_config(self, config: C) -> List[M]:
+    def handle_mapped_config(self, config: X) -> List[M]:
         raise NotImplementedError()
 
     def handle_reset(self) -> List[M]:
-        return self.internal_handle_config(self._config)
+        return self.handle_mapped_config(self._config)
 
-    def handle_root_config(self, root_config: Config) -> Optional[List[M]]:
+    def handle_config(self, root_config: C) -> List[M]:
         config = type(self).extract_config(root_config)
-        return self.handle_config(config)
-
-    def handle_config(self, config: C) -> Optional[List[M]]:
         if config != self._config:
-            return self.internal_handle_config(config)
+            return self.handle_mapped_config(config)
         else:
-            return None
-
-
-class NullConfigComponent(Component[NullConfig, M]):
-    @classmethod
-    def extract_config(cls: Type[K], root_config: Config) -> NullConfig:
-        return NullConfig()
-
-    def __init__(self) -> None:
-        super().__init__(NullConfig())
-
-    def internal_handle_config(self, config: C) -> List[M]:
-        return self.handle_reset()
-
-    @abstractmethod
-    def handle_reset(self) -> List[M]:
-        raise NotImplementedError()
+            return []

@@ -6,9 +6,9 @@ from pushpluck.component import ComponentMessage
 from pushpluck.constants import ButtonCC
 from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage, SemitoneShiftMessage, StringShiftMessage
 from pushpluck.midi import MidiSink
-from pushpluck.pads import CompositePadsConfig, Pads, PadsMessage, PadColorMessage, MidiMessage
+from pushpluck.pads import Pads, PadsMessage, PadColorMessage, MidiMessage
 from pushpluck.push import ButtonEvent, PadEvent, PushEvent, PushOutput
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 import logging
 
@@ -24,7 +24,7 @@ class Plucked(Resettable):
         self._push = push
         self._midi_processed = midi_processed
         self._config = config
-        self._pads = Pads(scheme, CompositePadsConfig.extract(config))
+        self._pads = Pads.construct(scheme, config)
         self._menu = Menu()
 
     def _handle_config(self, config: Config) -> List[ComponentMessage]:
@@ -32,13 +32,11 @@ class Plucked(Resettable):
         if config != self._config:
             self._config = config
             # First reset pads to send note offs
-            pads_msgs = self._pads.handle_root_config(self._config)
-            if pads_msgs is not None:
-                msgs.extend(pads_msgs)
+            pads_msgs = self._pads.handle_config(self._config)
+            msgs.extend(pads_msgs)
             # Then reset screen
-            menu_msgs = self._menu.handle_root_config(self._config)
-            if menu_msgs is not None:
-                msgs.extend(menu_msgs)
+            menu_msgs = self._menu.handle_reset()
+            msgs.extend(menu_msgs)
         return msgs
 
     def handle_event(self, event: PushEvent) -> None:
@@ -52,18 +50,17 @@ class Plucked(Resettable):
             menu_msgs = self._menu.handle_event(event)
             self._handle_msgs(menu_msgs)
 
-    def _handle_msgs(self, msgs: Optional[Sequence[ComponentMessage]]) -> None:
-        if msgs is not None:
-            work = deque(msgs)
-            next_msgs: List[ComponentMessage] = []
-            while len(work) > 0:
-                msg = work.popleft()
-                self._handle_msg(msg, next_msgs)
-                work.extendleft(next_msgs)
-                next_msgs.clear()
+    def _handle_msgs(self, msgs: Sequence[ComponentMessage]) -> None:
+        work = deque(msgs)
+        next_msgs: List[ComponentMessage] = []
+        while len(work) > 0:
+            msg = work.popleft()
+            self._handle_msg(msg, next_msgs)
+            work.extendleft(next_msgs)
+            next_msgs.clear()
 
     def _handle_msg(self, msg: ComponentMessage, next_msgs: List[ComponentMessage]) -> None:
-        logging.info('message %s', msg)
+        logging.info('XXX message %s', msg)
         if isinstance(msg, PadsMessage):
             if isinstance(msg, MidiMessage):
                 self._midi_processed.send_msg(msg.msg)
@@ -95,7 +92,7 @@ class Plucked(Resettable):
                 config = replace(self._config, str_offset=str_offset)
                 next_msgs.extend(self._handle_config(config))
             else:
-                print('TODO unahandled menu msg', msg)
+                logging.info('XXX TODO unahandled menu msg', msg)
                 pass
         else:
             raise ValueError(f'Unhandled message type: {msg}')
