@@ -1,10 +1,9 @@
-from abc import ABCMeta, abstractmethod
 from bisect import bisect_left
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck.config import Config
 from pushpluck.midi import is_note_on_msg
-from pushpluck.component import Component, ComponentConfig
+from pushpluck.component import Component, ComponentConfig, ComponentMessage
 from typing import Dict, List, Optional, Tuple
 
 
@@ -56,7 +55,7 @@ class StringPos:
 
 
 @dataclass(frozen=True)
-class FretMessage:
+class FretMessage(ComponentMessage):
     # Position on strings/frets
     str_pos: StringPos
     # An underlying message relevant to the fretted note (on, off, aftertouch)
@@ -90,13 +89,7 @@ class FretboardState:
         )
 
 
-class FretboardQueries(metaclass=ABCMeta):
-    @abstractmethod
-    def get_note(self, str_pos: StringPos) -> int:
-        raise NotImplementedError()
-
-
-class Fretboard(Component[FretboardConfig, List[FretMessage]], FretboardQueries):
+class Fretboard(Component[FretboardConfig, FretMessage]):
     @classmethod
     def extract_config(cls, root_config: Config) -> FretboardConfig:
         return FretboardConfig.extract(root_config)
@@ -186,9 +179,4 @@ class Fretboard(Component[FretboardConfig, List[FretMessage]], FretboardQueries)
         out_msgs = self._note_offs()
         self._config = config
         self._state = FretboardState.initialize(config)
-        return out_msgs
-
-    def handle_reset(self) -> List[FretMessage]:
-        out_msgs = self._note_offs()
-        self._state = FretboardState.initialize(self._config)
         return out_msgs

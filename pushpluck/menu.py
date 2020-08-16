@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from pushpluck.constants import ButtonCC, ButtonIllum
-from pushpluck.component import NullConfigComponent
+from pushpluck.component import ComponentMessage, NullConfigComponent
 from pushpluck.push import PushEvent, ButtonEvent
 from typing import List, Optional
 
@@ -34,7 +34,7 @@ class Page(Enum):
             return None
 
 
-class MenuMessage:
+class MenuMessage(ComponentMessage):
     pass
 
 
@@ -64,6 +64,27 @@ class ButtonLedMessage(MenuMessage):
     illum: Optional[ButtonIllum]
 
 
+@dataclass(frozen=True)
+class SemitoneShiftMessage(MenuMessage):
+    diff: int
+
+
+@dataclass(frozen=True)
+class StringShiftMessage(MenuMessage):
+    diff: int
+
+
+ACTIVE_BUTTONS: List[ButtonCC] = [
+    ButtonCC.Undo,
+    ButtonCC.Left,
+    ButtonCC.Right,
+    ButtonCC.Up,
+    ButtonCC.Down,
+    ButtonCC.OctaveDown,
+    ButtonCC.OctaveUp
+]
+
+
 @dataclass
 class MenuState:
     cur_page: Page
@@ -71,10 +92,11 @@ class MenuState:
     def redraw(self) -> List[MenuMessage]:
         msgs: List[MenuMessage] = []
         msgs.append(ClearMessage())
-        msgs.append(ButtonLedMessage(ButtonCC.Master, ButtonIllum.Half))
         for page in Page:
             illum = ButtonIllum.Full if page == self.cur_page else ButtonIllum.Half
             msgs.append(ButtonLedMessage(page.to_button(), illum))
+        for button in ACTIVE_BUTTONS:
+            msgs.append(ButtonLedMessage(button, ButtonIllum.Half))
         return msgs
 
     def transition(self, new_page: Page) -> List[MenuMessage]:
@@ -86,7 +108,7 @@ class MenuState:
         return cls(Page.Device)
 
 
-class Menu(NullConfigComponent[List[MenuMessage]]):
+class Menu(NullConfigComponent[MenuMessage]):
     def __init__(self):
         super().__init__()
         self._state = MenuState.default()
@@ -96,11 +118,24 @@ class Menu(NullConfigComponent[List[MenuMessage]]):
         return self._state.redraw()
 
     def handle_event(self, event: PushEvent) -> List[MenuMessage]:
-        # TODO
         if isinstance(event, ButtonEvent):
-            page = Page.from_input_button(event.button)
-            if page is not None:
-                if event.pressed:
+            if event.pressed:
+                page = Page.from_input_button(event.button)
+                if page is not None:
                     return self._state.transition(page)
+                elif event.button == ButtonCC.OctaveDown:
+                    return [SemitoneShiftMessage(-12)]
+                elif event.button == ButtonCC.OctaveUp:
+                    return [SemitoneShiftMessage(12)]
+                elif event.button == ButtonCC.Left:
+                    return [SemitoneShiftMessage(-1)]
+                elif event.button == ButtonCC.Right:
+                    return [SemitoneShiftMessage(1)]
+                elif event.button == ButtonCC.Up:
+                    return [StringShiftMessage(1)]
+                elif event.button == ButtonCC.Down:
+                    return [StringShiftMessage(-1)]
+            else:
+                return []
         print('TODO unhandled event', event)
         return []

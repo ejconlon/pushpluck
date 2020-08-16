@@ -1,13 +1,14 @@
+from collections import deque
+from dataclasses import replace
 from pushpluck.base import Resettable
 from pushpluck.config import ColorScheme, Config
+from pushpluck.component import ComponentMessage
 from pushpluck.constants import ButtonCC
-from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
-from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage
+from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage, SemitoneShiftMessage, StringShiftMessage
 from pushpluck.midi import MidiSink
-from pushpluck.pads import Pads, PadsConfig, PadsMessage
+from pushpluck.pads import CompositePadsConfig, Pads, PadsMessage, PadColorMessage, MidiMessage
 from pushpluck.push import ButtonEvent, PadEvent, PushEvent, PushOutput
-from pushpluck.viewport import Viewport, ViewportConfig
-from typing import List
+from typing import List, Optional, Sequence
 
 import logging
 
@@ -23,85 +24,89 @@ class Plucked(Resettable):
         self._push = push
         self._midi_processed = midi_processed
         self._config = config
-        self._fretboard = Fretboard(FretboardConfig.extract(config))
-        self._viewport = Viewport(ViewportConfig.extract(config))
-        self._pads = Pads(scheme, self._fretboard, self._viewport, PadsConfig.extract(config))
+        self._pads = Pads(scheme, CompositePadsConfig.extract(config))
         self._menu = Menu()
 
-    def handle_config(self, config: Config) -> None:
+    def _handle_config(self, config: Config) -> List[ComponentMessage]:
+        msgs: List[ComponentMessage] = []
         if config != self._config:
             self._config = config
-            # Send note offs first to map back to pads correctly
-            fret_msgs = self._fretboard.handle_root_config(config)
-            if fret_msgs is not None:
-                self._handle_fret_msgs(fret_msgs)
-            self._viewport.handle_root_config(config)
-            # Then reset screen
-            menu_msgs = self._menu.handle_root_config(config)
-            if menu_msgs is not None:
-                self._handle_menu_msgs(menu_msgs)
-            # And reset pads
-            pads_msgs = self._pads.handle_root_config(config)
+            # First reset pads to send note offs
+            pads_msgs = self._pads.handle_root_config(self._config)
             if pads_msgs is not None:
-                self._handle_pads_msgs(pads_msgs)
+                msgs.extend(pads_msgs)
+            # Then reset screen
+            menu_msgs = self._menu.handle_root_config(self._config)
+            if menu_msgs is not None:
+                msgs.extend(menu_msgs)
+        return msgs
 
     def handle_event(self, event: PushEvent) -> None:
         if isinstance(event, PadEvent):
-            str_pos = self._viewport.str_pos_from_pad_pos(event.pos)
-            if str_pos is not None:
-                fret_msgs = self._fretboard.handle_note(str_pos, event.velocity)
-                self._handle_fret_msgs(fret_msgs)
-        elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Master:
+            pad_msgs = self._pads.handle_event(event)
+            self._handle_msgs(pad_msgs)
+        elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Undo:
             if event.pressed:
                 self.reset()
         else:
             menu_msgs = self._menu.handle_event(event)
-            self._handle_menu_msgs(menu_msgs)
+            self._handle_msgs(menu_msgs)
 
-    def _handle_fret_msgs(self, fret_msgs: List[FretMessage]) -> None:
-        for fret_msg in fret_msgs:
-            pad_pos = self._viewport.pad_pos_from_str_pos(fret_msg.str_pos)
-            if pad_pos is not None:
-                pads_msgs = self._pads.set_pad_pressed(pad_pos, fret_msg.is_sounding())
-                self._handle_pads_msgs(pads_msgs)
-            self._midi_processed.send_msg(fret_msg.msg)
+    def _handle_msgs(self, msgs: Optional[Sequence[ComponentMessage]]) -> None:
+        if msgs is not None:
+            work = deque(msgs)
+            next_msgs: List[ComponentMessage] = []
+            while len(work) > 0:
+                msg = work.popleft()
+                self._handle_msg(msg, next_msgs)
+                work.extendleft(next_msgs)
+                next_msgs.clear()
 
-    def _handle_menu_msgs(self, menu_msgs: List[MenuMessage]) -> None:
-        for menu_msg in menu_msgs:
-            print('checking menu msg', menu_msg)
-            if isinstance(menu_msg, ClearMessage):
+    def _handle_msg(self, msg: ComponentMessage, next_msgs: List[ComponentMessage]) -> None:
+        logging.info('message %s', msg)
+        if isinstance(msg, PadsMessage):
+            if isinstance(msg, MidiMessage):
+                self._midi_processed.send_msg(msg.msg)
+            elif isinstance(msg, PadColorMessage):
+                if msg.color is None:
+                    self._push.pad_led_off(msg.pos)
+                else:
+                    self._push.pad_set_color(msg.pos, msg.color)
+            else:
+                raise ValueError(f'Unhandled pads message type: {msg}')
+        elif isinstance(msg, MenuMessage):
+            if isinstance(msg, ClearMessage):
                 self._push.lcd_reset()
                 self._push.chan_sel_reset()
                 self._push.grid_sel_reset()
                 self._push.button_reset()
-            elif isinstance(menu_msg, ButtonLedMessage):
-                if menu_msg.illum is None:
-                    self._push.button_off(menu_msg.button)
+            elif isinstance(msg, ButtonLedMessage):
+                if msg.illum is None:
+                    raise Exception(f'BUTTON OFF {msg}')
+                    self._push.button_off(msg.button)
                 else:
-                    self._push.button_set_illum(menu_msg.button, menu_msg.illum)
+                    self._push.button_set_illum(msg.button, msg.illum)
+            elif isinstance(msg, SemitoneShiftMessage):
+                fret_offset = self._config.fret_offset + msg.diff
+                config = replace(self._config, fret_offset=fret_offset)
+                next_msgs.extend(self._handle_config(config))
+            elif isinstance(msg, StringShiftMessage):
+                str_offset = self._config.str_offset + msg.diff
+                config = replace(self._config, str_offset=str_offset)
+                next_msgs.extend(self._handle_config(config))
             else:
-                print('TODO unahandled menu msg', menu_msg)
+                print('TODO unahandled menu msg', msg)
                 pass
-
-    def _handle_pads_msgs(self, pads_msgs: List[PadsMessage]) -> None:
-        for pads_msg in pads_msgs:
-            if pads_msg.color is None:
-                self._push.pad_led_off(pads_msg.pos)
-            else:
-                self._push.pad_set_color(pads_msg.pos, pads_msg.color)
+        else:
+            raise ValueError(f'Unhandled message type: {msg}')
 
     def reset(self) -> None:
-        # Send note offs
-        logging.info('plucked resetting fretboard')
-        fret_msgs = self._fretboard.handle_reset()
-        self._handle_fret_msgs(fret_msgs)
+        # Update notes and pads
+        logging.info('plucked resetting notes pads')
+        pads_msgs = self._pads.handle_reset()
+        self._handle_msgs(pads_msgs)
 
         # Update menu (LCD and buttons)
-        logging.info('plucked resetting menu')
+        logging.info('plucked resetting lcd and buttons')
         menu_msgs = self._menu.handle_reset()
-        self._handle_menu_msgs(menu_msgs)
-
-        # Update pads
-        logging.info('plucked resetting pads')
-        pads_msgs = self._pads.handle_reset()
-        self._handle_pads_msgs(pads_msgs)
+        self._handle_msgs(menu_msgs)

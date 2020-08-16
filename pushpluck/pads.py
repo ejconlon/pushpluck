@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from pushpluck.component import Component, ComponentConfig
+from mido.frozen import FrozenMessage
+from pushpluck.component import Component, ComponentConfig, ComponentMessage
 from pushpluck.config import ColorScheme, Config, NoteType, PadColor
 from pushpluck.color import Color
-from pushpluck.fretboard import FretboardQueries
+from pushpluck.fretboard import Fretboard, FretboardConfig, FretMessage
 from pushpluck.pos import Pos
+from pushpluck.push import PadEvent
 from pushpluck.scale import NoteName, Scale, ScaleClassifier, name_and_octave_from_note
-from pushpluck.viewport import ViewportQueries
+from pushpluck.viewport import Viewport, ViewportConfig
 from typing import Dict, List, Optional
 
 
@@ -19,6 +21,21 @@ class PadsConfig(ComponentConfig):
         return PadsConfig(
             scale=root_config.scale,
             root=root_config.root
+        )
+
+
+@dataclass(frozen=True)
+class CompositePadsConfig(ComponentConfig):
+    pads_config: PadsConfig
+    fret_config: FretboardConfig
+    view_config: ViewportConfig
+
+    @classmethod
+    def extract(cls, root_config: Config) -> 'CompositePadsConfig':
+        return CompositePadsConfig(
+            pads_config=PadsConfig.extract(root_config),
+            fret_config=FretboardConfig.extract(root_config),
+            view_config=ViewportConfig.extract(root_config)
         )
 
 
@@ -38,27 +55,36 @@ class PadsState:
 
 
 @dataclass(frozen=True)
-class PadsMessage:
+class PadsMessage(ComponentMessage):
+    pass
+
+
+@dataclass(frozen=True)
+class PadColorMessage(PadsMessage):
     pos: Pos
     color: Optional[Color]
 
 
-class Pads(Component[PadsConfig, List[PadsMessage]]):
+@dataclass(frozen=True)
+class MidiMessage(PadsMessage):
+    msg: FrozenMessage
+
+
+class Pads(Component[CompositePadsConfig, PadsMessage]):
     @classmethod
-    def extract_config(cls, root_config: Config) -> PadsConfig:
-        return PadsConfig.extract(root_config)
+    def extract_config(cls, root_config: Config) -> CompositePadsConfig:
+        return CompositePadsConfig.extract(root_config)
 
     def __init__(
         self,
         scheme: ColorScheme,
-        fretboard: FretboardQueries,
-        viewport: ViewportQueries,
-        config: PadsConfig
+        config: CompositePadsConfig
     ) -> None:
         super().__init__(config)
         self._scheme = scheme
-        self._fretboard = fretboard
-        self._viewport = viewport
+        self._pads_config = config.pads_config
+        self._fretboard = Fretboard(config.fret_config)
+        self._viewport = Viewport(config.view_config)
         self._state = PadsState.default()
         self._reset_pad_colors()
 
@@ -80,26 +106,63 @@ class Pads(Component[PadsConfig, List[PadsMessage]]):
             return PadColor.note(note_type)
 
     def _reset_pad_colors(self) -> None:
-        classifier = self._config.scale.to_classifier(self._config.root)
+        classifier = self._pads_config.scale.to_classifier(self._pads_config.root)
         for pos in Pos.iter_all():
             color = self._make_pad_color(classifier, pos)
             self._state.lookup[pos].color = color
 
-    def set_pad_pressed(self, pos: Pos, pressed: bool) -> List[PadsMessage]:
+    def _set_pad_pressed(self, pos: Pos, pressed: bool) -> PadsMessage:
         self._state.lookup[pos].pressed = pressed
-        return [PadsMessage(pos, self._get_pad_color(pos))]
+        return PadColorMessage(pos, self._get_pad_color(pos))
+
+    def handle_event(self, event: PadEvent) -> Optional[List[PadsMessage]]:
+        str_pos = self._viewport.str_pos_from_pad_pos(event.pos)
+        if str_pos is not None:
+            fret_msgs = self._fretboard.handle_note(str_pos, event.velocity)
+            msgs: List[PadsMessage] = []
+            for fret_msg in fret_msgs:
+                msgs.extend(self._handle_fret_msg(fret_msg))
+            return msgs
+        else:
+            return None
 
     def _get_pad_color(self, pos: Pos) -> Optional[Color]:
         pad = self._state.lookup[pos]
         return pad.color.get_color(self._scheme, pad.pressed)
 
-    def internal_handle_config(self, config: PadsConfig) -> List[PadsMessage]:
+    def internal_handle_config(self, config: CompositePadsConfig) -> List[PadsMessage]:
         self._config = config
+        reset_pads = False
+        msgs: List[PadsMessage] = []
+        fret_msgs = self._fretboard.handle_config(config.fret_config)
+        if fret_msgs is not None:
+            for fret_msg in fret_msgs:
+                msgs.extend(self._handle_fret_msg(fret_msg))
+            reset_pads = True
+        view_msgs = self._viewport.handle_config(config.view_config)
+        assert not view_msgs
+        if config.pads_config != self._pads_config or reset_pads:
+            self._pads_config = config.pads_config
+            msgs.extend(self._pads_reset())
+        return msgs
+
+    def _pads_reset(self) -> List[PadsMessage]:
         self._reset_pad_colors()
-        return self.handle_reset()
+        return [PadColorMessage(pos, self._get_pad_color(pos)) for pos in Pos.iter_all()]
+
+    def _handle_fret_msg(self, msg: FretMessage) -> List[PadsMessage]:
+        msgs: List[PadsMessage] = [MidiMessage(msg.msg)]
+        pad_pos = self._viewport.pad_pos_from_str_pos(msg.str_pos)
+        if pad_pos is not None:
+            msgs.append(self._set_pad_pressed(pad_pos, msg.is_sounding()))
+        return msgs
 
     def handle_reset(self) -> List[PadsMessage]:
-        pads_msgs: List[PadsMessage] = []
-        for pos in Pos.iter_all():
-            pads_msgs.append(PadsMessage(pos, self._get_pad_color(pos)))
-        return pads_msgs
+        msgs: List[PadsMessage] = []
+        fret_msgs = self._fretboard.handle_reset()
+        for fret_msg in fret_msgs:
+            msgs.extend(self._handle_fret_msg(fret_msg))
+        view_msgs = self._viewport.handle_reset()
+        assert len(view_msgs) == 0
+        msgs.extend(self._pads_reset())
+        return msgs

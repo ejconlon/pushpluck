@@ -103,6 +103,8 @@ class Config:
     scale: Scale
     root: NoteName
     min_velocity: int
+    str_offset: int
+    fret_offset: int
 
 
 def init_config(min_velocity: int) -> Config:
@@ -113,7 +115,9 @@ def init_config(min_velocity: int) -> Config:
         orientation=Orientation.Left,
         scale=SCALE_LOOKUP['Major'],
         root=NoteName.C,
-        min_velocity=min_velocity
+        min_velocity=min_velocity,
+        str_offset=0,
+        fret_offset=0
     )
 
 
@@ -127,3 +131,12 @@ def default_scheme() -> ColorScheme:
         control=COLORS['Yellow'],
         control_pressed=COLORS['Green']
     )
+
+
+class Message:
+    pass
+
+
+@dataclass(frozen=True)
+class NullMessage(Message):
+    pass
