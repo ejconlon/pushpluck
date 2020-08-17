@@ -303,18 +303,17 @@ class MenuState:
 
 
 class Menu:
-    def __init__(self, layout: MenuLayout, config: Config, push: PushOutput):
+    def __init__(self, layout: MenuLayout, config: Config):
         self._layout = layout
         self._init_config = config
         self._state = MenuState.initial(layout, config)
-        self._push = push
 
-    def handle_reset(self) -> Config:
+    def handle_reset(self, push: PushOutput) -> Config:
         self._state = MenuState.initial(self._layout, self._init_config)
-        self._state.redraw(self._push)
+        self._state.redraw(push)
         return self._state.config
 
-    def handle_event(self, event: PushEvent) -> Optional[Config]:
+    def handle_event(self, push: PushOutput, event: PushEvent) -> Optional[Config]:
         updated = False
         if isinstance(event, ButtonEvent):
             if event.pressed:
@@ -340,7 +339,7 @@ class Menu:
                 updated = state.accumulate(diff)
 
         if updated:
-            self._state.redraw(self._push)
+            self._state.redraw(push)
             return self._state.config
         else:
             return None

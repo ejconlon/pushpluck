@@ -17,11 +17,7 @@ class MappedComponentConfig(Generic[C], metaclass=ABCMeta):
 
 class Component(Generic[C, R], metaclass=ABCMeta):
     @abstractmethod
-    def handle_reset(self) -> R:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def handle_config(self, config: C) -> Optional[R]:
+    def handle_config(self, config: C, reset: bool) -> Optional[R]:
         raise NotImplementedError()
 
 
@@ -38,12 +34,9 @@ class MappedComponent(Generic[C, X, R], Component[C, R]):
     def handle_mapped_config(self, config: X) -> R:
         raise NotImplementedError()
 
-    def handle_reset(self) -> R:
-        return self.handle_mapped_config(self._config)
-
-    def handle_config(self, root_config: C) -> Optional[R]:
+    def handle_config(self, root_config: C, reset: bool) -> Optional[R]:
         config = type(self).extract_config(root_config)
-        if config != self._config:
+        if config != self._config or reset:
             return self.handle_mapped_config(config)
         else:
             return None

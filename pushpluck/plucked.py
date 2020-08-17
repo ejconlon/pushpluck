@@ -20,21 +20,21 @@ class Plucked(Resettable):
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
-        self._pads = Pads.construct(scheme, config, push, midi_processed)
-        self._menu = Menu(layout, config, push)
+        self._pads = Pads.construct(scheme, config)
+        self._menu = Menu(layout, config)
 
     def handle_event(self, event: PushEvent) -> None:
         if isinstance(event, PadEvent):
-            self._pads.handle_event(event)
+            self._pads.handle_event(self._push, self._midi_processed, event)
         elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Undo:
             if event.pressed:
                 self.reset()
         else:
-            config = self._menu.handle_event(event)
+            config = self._menu.handle_event(self._push, event)
             if config is not None:
-                self._pads.handle_config(config)
+                self._pads.handle_config(self._push, self._midi_processed, config, reset=False)
 
     def reset(self) -> None:
         logging.info('plucked resetting')
-        config = self._menu.handle_reset()
-        self._pads.handle_config(config)
+        config = self._menu.handle_reset(self._push)
+        self._pads.handle_config(self._push, self._midi_processed, config, reset=True)
