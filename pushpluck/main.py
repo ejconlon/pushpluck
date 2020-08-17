@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from pushpluck import constants
 from pushpluck.config import default_scheme, init_config
+from pushpluck.menu import default_menu_layout
 from pushpluck.plucked import Plucked
 from pushpluck.push import match_event, push_ports_context, PushOutput, PushPorts
 
@@ -9,13 +10,14 @@ import logging
 
 def main_with_ports(ports: PushPorts, min_velocity: int) -> None:
     scheme = default_scheme()
+    layout = default_menu_layout()
     config = init_config(min_velocity)
     push = PushOutput(ports.midi_out)
     # Start with a clean slate
     logging.info('resetting push')
     push.reset()
     try:
-        plucked = Plucked(push, ports.midi_processed, scheme, config)
+        plucked = Plucked(push, ports.midi_processed, scheme, layout, config)
         logging.info('resetting controller')
         plucked.reset()
         logging.info('controller ready')

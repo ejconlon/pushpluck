@@ -245,19 +245,20 @@ class PushOutput(Resettable):
         msg = make_lcd_msg(row, line_col, text)
         self._midi_out.send_msg(msg)
 
-    def lcd_display_half_block(self, row: int, block_col: int, half: int, text: str) -> None:
+    def lcd_display_half_block(self, row: int, half_col: int, text: str) -> None:
+        block_col = half_col // 2
+        half = half_col % 2
         assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
         assert block_col >= 0 and block_col < constants.DISPLAY_MAX_BLOCKS
         assert len(text) <= constants.DISPLAY_HALF_BLOCK_LEN
-        assert half == 0 or half == 1
         offset: int
         just_text: str
         if half == 0:
             offset = 0
             just_text = text.ljust(constants.DISPLAY_HALF_BLOCK_LEN + 1, ' ')
         else:
-            offset = constants.DISPLAY_BLOCK_LEN
-            just_text = ' ' + text.ljust(constants.DISPLAY_BLOCK_LEN, ' ')
+            offset = constants.DISPLAY_HALF_BLOCK_LEN
+            just_text = ' ' + text.ljust(constants.DISPLAY_HALF_BLOCK_LEN, ' ')
         line_col = constants.DISPLAY_BLOCK_LEN * block_col + offset
         msg = make_lcd_msg(row, line_col, just_text)
         self._midi_out.send_msg(msg)

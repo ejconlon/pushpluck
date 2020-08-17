@@ -131,12 +131,3 @@ def default_scheme() -> ColorScheme:
         control=COLORS['Yellow'],
         control_pressed=COLORS['Green']
     )
-
-
-class Message:
-    pass
-
-
-@dataclass(frozen=True)
-class NullMessage(Message):
-    pass

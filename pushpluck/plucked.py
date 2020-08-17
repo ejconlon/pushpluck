@@ -4,7 +4,7 @@ from pushpluck.base import Resettable
 from pushpluck.config import ColorScheme, Config
 from pushpluck.component import ComponentMessage
 from pushpluck.constants import ButtonCC
-from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage, SemitoneShiftMessage, StringShiftMessage
+from pushpluck.menu import ClearMessage, Menu, MenuMessage, ButtonLedMessage, SemitoneShiftMessage, StringShiftMessage, MenuLayout, HalfBlockMessage, BlockMessage
 from pushpluck.midi import MidiSink
 from pushpluck.pads import Pads, PadsMessage, PadColorMessage, MidiMessage
 from pushpluck.push import ButtonEvent, PadEvent, PushEvent, PushOutput
@@ -19,13 +19,14 @@ class Plucked(Resettable):
         push: PushOutput,
         midi_processed: MidiSink,
         scheme: ColorScheme,
+        layout: MenuLayout,
         config: Config,
     ) -> None:
         self._push = push
         self._midi_processed = midi_processed
         self._config = config
         self._pads = Pads.construct(scheme, config)
-        self._menu = Menu()
+        self._menu = Menu(layout)
 
     def _handle_config(self, config: Config) -> List[ComponentMessage]:
         msgs: List[ComponentMessage] = []
@@ -91,6 +92,10 @@ class Plucked(Resettable):
                 str_offset = self._config.str_offset + msg.diff
                 config = replace(self._config, str_offset=str_offset)
                 next_msgs.extend(self._handle_config(config))
+            elif isinstance(msg, HalfBlockMessage):
+                self._push.lcd_display_half_block(msg.row, msg.half_col, msg.text)
+            elif isinstance(msg, BlockMessage):
+                self._push.lcd_display_block(msg.row, msg.block_col, msg.text)
             else:
                 logging.info('XXX TODO unahandled menu msg', msg)
                 pass
