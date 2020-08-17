@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from mido.frozen import FrozenMessage
 from pushpluck.config import Config
 from pushpluck.midi import is_note_on_msg
-from pushpluck.component import MappedComponent, MappedComponentConfig, ComponentMessage
+from pushpluck.component import MappedComponent, MappedComponentConfig
 from typing import Dict, List, Optional, Tuple
 
 
@@ -61,7 +61,7 @@ class TriggerEvent:
 
 
 @dataclass(frozen=True)
-class FretboardMessage(ComponentMessage):
+class FretboardMessage:
     # Position on strings/frets
     str_pos: StringPos
     # An underlying message relevant to the fretted note (on, off, aftertouch)
@@ -95,7 +95,7 @@ class FretboardState:
         )
 
 
-class Fretboard(MappedComponent[Config, FretboardConfig, TriggerEvent, FretboardMessage]):
+class Fretboard(MappedComponent[Config, FretboardConfig, List[FretboardMessage]]):
     @classmethod
     def construct(cls, root_config: Config) -> 'Fretboard':
         return cls(cls.extract_config(root_config))

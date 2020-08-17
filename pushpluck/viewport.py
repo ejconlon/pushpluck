@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 from pushpluck import constants
-from pushpluck.base import Void
-from pushpluck.component import MappedComponent, MappedComponentConfig, VoidComponentMessage
+from pushpluck.component import MappedComponent, MappedComponentConfig
 from pushpluck.config import Config, Layout
 from pushpluck.fretboard import StringPos
 from pushpluck.pos import Pos
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -25,7 +24,7 @@ class ViewportConfig(MappedComponentConfig):
         )
 
 
-class Viewport(MappedComponent[Config, ViewportConfig, Void, VoidComponentMessage]):
+class Viewport(MappedComponent[Config, ViewportConfig, None]):
     @classmethod
     def construct(cls, root_config: Config) -> 'Viewport':
         return cls(cls.extract_config(root_config))
@@ -34,12 +33,8 @@ class Viewport(MappedComponent[Config, ViewportConfig, Void, VoidComponentMessag
     def extract_config(cls, root_config: Config) -> ViewportConfig:
         return ViewportConfig.extract(root_config)
 
-    def handle_event(self, event: Void) -> List[VoidComponentMessage]:
-        return event.absurd()
-
-    def handle_mapped_config(self, config: ViewportConfig) -> List[VoidComponentMessage]:
+    def handle_mapped_config(self, config: ViewportConfig) -> None:
         self._config = config
-        return []
 
     def str_pos_from_pad_pos(self, pos: Pos) -> Optional[StringPos]:
         # TODO support diff number of strings and orientation

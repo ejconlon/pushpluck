@@ -1,12 +1,10 @@
 from abc import ABCMeta, abstractmethod
-from pushpluck.base import Void
-from typing import Generic, List, Type, TypeVar
+from typing import Generic, Optional, Type, TypeVar
 
 
 C = TypeVar('C')
 X = TypeVar('X', bound='MappedComponentConfig')
-E = TypeVar('E')
-M = TypeVar('M', bound='ComponentMessage')
+R = TypeVar('R')
 K = TypeVar('K', bound='Component')
 
 
@@ -17,30 +15,17 @@ class MappedComponentConfig(Generic[C], metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class ComponentMessage:
-    pass
-
-
-class VoidComponentMessage(Void, ComponentMessage):
-    def __init__(self):
-        super(Void, self).__init__()
-
-
-class Component(Generic[C, E, M], metaclass=ABCMeta):
+class Component(Generic[C, R], metaclass=ABCMeta):
     @abstractmethod
-    def handle_event(self, event: E) -> List[M]:
+    def handle_reset(self) -> R:
         raise NotImplementedError()
 
     @abstractmethod
-    def handle_reset(self) -> List[M]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def handle_config(self, config: C) -> List[M]:
+    def handle_config(self, config: C) -> Optional[R]:
         raise NotImplementedError()
 
 
-class MappedComponent(Generic[C, X, E, M], Component[C, E, M]):
+class MappedComponent(Generic[C, X, R], Component[C, R]):
     @classmethod
     @abstractmethod
     def extract_config(cls: Type[K], root_config: C) -> X:
@@ -50,15 +35,15 @@ class MappedComponent(Generic[C, X, E, M], Component[C, E, M]):
         self._config = config
 
     @abstractmethod
-    def handle_mapped_config(self, config: X) -> List[M]:
+    def handle_mapped_config(self, config: X) -> R:
         raise NotImplementedError()
 
-    def handle_reset(self) -> List[M]:
+    def handle_reset(self) -> R:
         return self.handle_mapped_config(self._config)
 
-    def handle_config(self, root_config: C) -> List[M]:
+    def handle_config(self, root_config: C) -> Optional[R]:
         config = type(self).extract_config(root_config)
         if config != self._config:
             return self.handle_mapped_config(config)
         else:
-            return []
+            return None

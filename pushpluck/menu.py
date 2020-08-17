@@ -1,11 +1,10 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto, unique
 from pushpluck import constants
 from pushpluck.config import Config, Layout
-from pushpluck.constants import ButtonCC, ButtonIllum
-from pushpluck.component import Component, ComponentMessage
-from pushpluck.push import PushEvent, ButtonEvent, KnobEvent
+from pushpluck.constants import ButtonCC, ButtonIllum, KnobGroup
+from pushpluck.push import PushEvent, ButtonEvent, KnobEvent, PushOutput
 # from pushpluck.scale import SCALES, NoteName
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
@@ -42,45 +41,6 @@ class Page(Enum):
             return None
 
 
-class MenuMessage(ComponentMessage):
-    pass
-
-
-@dataclass(frozen=True)
-class ClearMessage(MenuMessage):
-    pass
-
-
-@dataclass(frozen=True)
-class HalfBlockMessage(MenuMessage):
-    row: int
-    half_col: int
-    text: str
-
-
-@dataclass(frozen=True)
-class BlockMessage(MenuMessage):
-    row: int
-    block_col: int
-    text: str
-
-
-@dataclass(frozen=True)
-class ButtonLedMessage(MenuMessage):
-    button: ButtonCC
-    illum: Optional[ButtonIllum]
-
-
-@dataclass(frozen=True)
-class SemitoneShiftMessage(MenuMessage):
-    diff: int
-
-
-@dataclass(frozen=True)
-class StringShiftMessage(MenuMessage):
-    diff: int
-
-
 ACTIVE_BUTTONS: List[ButtonCC] = [
     ButtonCC.Undo,
     ButtonCC.Left,
@@ -113,7 +73,6 @@ class ValRange(Generic[N], metaclass=ABCMeta):
 @dataclass(frozen=True)
 class IntValRange(ValRange[int]):
     min_val: int
-    init_val: int
     max_val: int
 
     def render(self, value: int) -> str:
@@ -199,20 +158,24 @@ class KnobState(Generic[Y, N]):
             raise ValueError(f'Control {control.name} cannot set initial value {val}')
         return cls(control, 0, index, val)
 
-    def update(self, config: Y) -> None:
+    def update(self, config: Y) -> bool:
         new_val = self.control.extractor(config)  # type: ignore
         new_index = self.control.val_range.set_value(new_val)
         if new_index is None:
             raise ValueError(f'Control {self.control.name} cannot set updated value {new_val}')
         if self.index != new_index:
             self.accum = 0
-        self.index = new_index
-        self.val = new_val
+            self.index = new_index
+            self.val = new_val
+            return True
+        else:
+            return False
 
     def rendered(self) -> str:
         return self.control.val_range.render(self.val)
 
-    def accumulate(self, diff: int) -> None:
+    def accumulate(self, diff: int) -> bool:
+        updated = False
         new_accum = self.accum + diff
         if new_accum <= -self.control.sensitivity:
             pair = self.control.val_range.pred(self.index)
@@ -221,6 +184,7 @@ class KnobState(Generic[Y, N]):
             else:
                 self.index, self.val = pair
                 self.accum = new_accum % self.control.sensitivity
+                updated = True
         elif new_accum >= self.control.sensitivity:
             pair = self.control.val_range.succ(self.index)
             if pair is None:
@@ -228,8 +192,10 @@ class KnobState(Generic[Y, N]):
             else:
                 self.index, self.val = pair
                 self.accum = new_accum % self.control.sensitivity
+                updated = True
         else:
             self.accum = new_accum
+        return updated
 
 
 @dataclass
@@ -242,6 +208,12 @@ class DeviceState(Generic[Y, N]):
             knob_states=[KnobState.initial(kc, config) for kc in knob_controls]
         )
 
+    def update(self, config: Y) -> bool:
+        updated = False
+        for state in self.knob_states:
+            updated = state.update(config) or updated
+        return updated
+
 
 @dataclass(frozen=True)
 class MenuLayout:
@@ -252,12 +224,12 @@ def default_menu_layout() -> MenuLayout:
     return MenuLayout(
         device_knob_controls=[
             KnobControl(
-                'MinVel', 1,
-                IntValRange(0, 0, 127),
+                'MinVel', 2,
+                IntValRange(0, 127),
                 lambda c: c.min_velocity
             ),
             KnobControl(
-                'Layout', 1,
+                'Layout', 2,
                 ChoiceValRange.new([v for v in Layout], lambda v: v.name),
                 lambda c: c.layout
             ),
@@ -272,75 +244,103 @@ def default_menu_layout() -> MenuLayout:
 
 @dataclass
 class MenuState:
+    config: Config
     cur_page: Page
     device_state: DeviceState
 
-    def redraw(self) -> List[MenuMessage]:
-        msgs: List[MenuMessage] = []
-        msgs.append(ClearMessage())
+    def redraw(self, push: PushOutput) -> None:
+        # Clear owned components
+        push.lcd_reset()
+        push.chan_sel_reset()
+        push.grid_sel_reset()
+        push.button_reset()
+        # Highlight page buttons
         for page in Page:
             illum = ButtonIllum.Full if page == self.cur_page else ButtonIllum.Half
-            msgs.append(ButtonLedMessage(page.to_button(), illum))
+            push.button_set_illum(page.to_button(), illum)
+        # Highlight other buttons
         for button in ACTIVE_BUTTONS:
-            msgs.append(ButtonLedMessage(button, ButtonIllum.Half))
+            push.button_set_illum(button, ButtonIllum.Half)
+        # Draw page-specific portions
         if self.cur_page == Page.Device:
             for half_col, state in enumerate(self.device_state.knob_states):
-                msgs.append(HalfBlockMessage(constants.DISPLAY_MAX_ROWS - 1, half_col, state.control.name))
-                msgs.append(HalfBlockMessage(constants.DISPLAY_MAX_ROWS - 2, half_col, state.rendered()))
+                push.lcd_display_half_block(constants.DISPLAY_MAX_ROWS - 1, half_col, state.control.name)
+                push.lcd_display_half_block(constants.DISPLAY_MAX_ROWS - 2, half_col, state.rendered())
         elif self.cur_page == Page.Browse:
             pass
         elif self.cur_page == Page.Scales:
             pass
         else:
             raise ValueError()
-        return msgs
 
-    def transition(self, new_page: Page) -> List[MenuMessage]:
-        self.cur_page = new_page
-        return self.redraw()
+    def set_page(self, new_page: Page) -> bool:
+        if new_page != self.cur_page:
+            self.cur_page = new_page
+            return True
+        else:
+            return False
+
+    def _set_config(self, new_config: Config) -> bool:
+        assert new_config != self.config
+        updated = False
+        self.config = new_config
+        updated = self.device_state.update(new_config) or updated
+        return updated
+
+    def shift_semitones(self, diff: int) -> bool:
+        fret_offset = self.config.fret_offset + diff
+        new_config = replace(self.config, fret_offset=fret_offset)
+        return self._set_config(new_config)
+
+    def shift_strings(self, diff: int) -> bool:
+        str_offset = self.config.str_offset + diff
+        new_config = replace(self.config, str_offset=str_offset)
+        return self._set_config(new_config)
 
     @classmethod
     def initial(cls, layout: MenuLayout, config: Config) -> 'MenuState':
-        return cls(Page.Device, DeviceState.initial(layout.device_knob_controls, config))
+        return cls(config, Page.Device, DeviceState.initial(layout.device_knob_controls, config))
 
 
-class Menu(Component[Config, PushEvent, MenuMessage]):
-    def __init__(self, layout: MenuLayout, config: Config):
+class Menu:
+    def __init__(self, layout: MenuLayout, config: Config, push: PushOutput):
         self._layout = layout
-        self._config = config
+        self._init_config = config
         self._state = MenuState.initial(layout, config)
+        self._push = push
 
-    def handle_reset(self) -> List[MenuMessage]:
-        self._state = MenuState.initial(self._layout, self._config)
-        return self._state.redraw()
+    def handle_reset(self) -> Config:
+        self._state = MenuState.initial(self._layout, self._init_config)
+        self._state.redraw(self._push)
+        return self._state.config
 
-    def handle_event(self, event: PushEvent) -> List[MenuMessage]:
+    def handle_event(self, event: PushEvent) -> Optional[Config]:
+        updated = False
         if isinstance(event, ButtonEvent):
             if event.pressed:
                 page = Page.from_input_button(event.button)
                 if page is not None:
-                    return self._state.transition(page)
+                    updated = self._state.set_page(page)
                 elif event.button == ButtonCC.OctaveDown:
-                    return [SemitoneShiftMessage(-12)]
+                    updated = self._state.shift_semitones(-12)
                 elif event.button == ButtonCC.OctaveUp:
-                    return [SemitoneShiftMessage(12)]
+                    updated = self._state.shift_semitones(12)
                 elif event.button == ButtonCC.Left:
-                    return [SemitoneShiftMessage(-1)]
+                    updated = self._state.shift_semitones(-1)
                 elif event.button == ButtonCC.Right:
-                    return [SemitoneShiftMessage(1)]
+                    updated = self._state.shift_semitones(1)
                 elif event.button == ButtonCC.Up:
-                    return [StringShiftMessage(1)]
+                    updated = self._state.shift_strings(1)
                 elif event.button == ButtonCC.Down:
-                    return [StringShiftMessage(-1)]
-            else:
-                return []
+                    updated = self._state.shift_strings(-1)
         elif isinstance(event, KnobEvent):
-            # TODO
-            return []
-        return []
+            if event.group == KnobGroup.Center:
+                state = self._state.device_state.knob_states[event.offset]
+                diff = 1 if event.clockwise else -1
+                updated = state.accumulate(diff)
 
-    def handle_config(self, config: Config) -> List[MenuMessage]:
-        self._config = config
-        for state in self._state.device_state.knob_states:
-            state.update(config)
-        return self._state.redraw()
+        if updated:
+            self._state.redraw(self._push)
+            return self._state.config
+        else:
+            return None

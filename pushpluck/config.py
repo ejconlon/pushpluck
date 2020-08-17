@@ -27,26 +27,26 @@ class ColorScheme:
     control_pressed: Color
 
 
-class PadColor(metaclass=ABCMeta):
+class PadColorMapper(metaclass=ABCMeta):
     @abstractmethod
     def get_color(self, scheme: ColorScheme, pressed: bool) -> Optional[Color]:
         raise NotImplementedError()
 
     @staticmethod
-    def note(note_type: NoteType) -> 'PadColor':
-        return NotePadColor(note_type)
+    def note(note_type: NoteType) -> 'NotePadColorMapper':
+        return NotePadColorMapper(note_type)
 
     @staticmethod
-    def misc(pressable: bool) -> 'PadColor':
-        return MiscPadColor(pressable)
+    def misc(pressable: bool) -> 'MiscPadColorMapper':
+        return MiscPadColorMapper(pressable)
 
     @staticmethod
-    def control() -> 'PadColor':
-        return ControlPadColor()
+    def control() -> 'ControlPadColorMapper':
+        return ControlPadColorMapper()
 
 
 @dataclass(frozen=True)
-class NotePadColor(PadColor):
+class NotePadColorMapper(PadColorMapper):
     note_type: NoteType
 
     def get_color(self, scheme: ColorScheme, pressed: bool) -> Optional[Color]:
@@ -64,7 +64,7 @@ class NotePadColor(PadColor):
 
 
 @dataclass(frozen=True)
-class MiscPadColor(PadColor):
+class MiscPadColorMapper(PadColorMapper):
     pressable: bool
 
     def get_color(self, scheme: ColorScheme, pressed: bool) -> Optional[Color]:
@@ -72,7 +72,7 @@ class MiscPadColor(PadColor):
 
 
 @dataclass(frozen=True)
-class ControlPadColor(PadColor):
+class ControlPadColorMapper(PadColorMapper):
     def get_color(self, scheme: ColorScheme, pressed: bool) -> Optional[Color]:
         return scheme.control_pressed if pressed else scheme.control
 
