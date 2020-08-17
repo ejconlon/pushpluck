@@ -6,16 +6,16 @@ from typing import Dict, List, Set, Tuple
 @unique
 class NoteName(Enum):
     C = 0
-    Cs = 1
+    Db = 1
     D = 2
-    Ds = 3
+    Eb = 3
     E = 4
     F = 5
-    Fs = 6
+    Gb = 6
     G = 7
-    Gs = 8
+    Ab = 8
     A = 9
-    As = 10
+    Bb = 10
     B = 11
 
     def add_steps(self, steps: int) -> 'NoteName':
@@ -28,6 +28,10 @@ class NoteName(Enum):
 
 
 MAX_NOTES = 12
+CIRCLE_OF_FIFTHS = [NoteName[x] for x in [
+    'C', 'G', 'D', 'A', 'E', 'B',
+    'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F'
+]]
 
 
 def _build_note_lookup() -> Dict[int, NoteName]:

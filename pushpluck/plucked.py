@@ -26,7 +26,7 @@ class Plucked(Resettable):
         self._midi_processed = midi_processed
         self._config = config
         self._pads = Pads.construct(scheme, config)
-        self._menu = Menu(layout)
+        self._menu = Menu(layout, config)
 
     def _handle_config(self, config: Config) -> List[ComponentMessage]:
         msgs: List[ComponentMessage] = []

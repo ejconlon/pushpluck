@@ -2,14 +2,16 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from pushpluck import constants
-from pushpluck.base import Void
+from pushpluck.config import Config, Layout
 from pushpluck.constants import ButtonCC, ButtonIllum
 from pushpluck.component import Component, ComponentMessage
-from pushpluck.push import PushEvent, ButtonEvent
-from typing import Any, Generic, List, Optional, Tuple, TypeVar
+from pushpluck.push import PushEvent, ButtonEvent, KnobEvent
+# from pushpluck.scale import SCALES, NoteName
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 
 N = TypeVar('N')
+Y = TypeVar('Y')
 
 
 @unique
@@ -92,6 +94,14 @@ ACTIVE_BUTTONS: List[ButtonCC] = [
 
 class ValRange(Generic[N], metaclass=ABCMeta):
     @abstractmethod
+    def render(self, value: N) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_value(self, value: N) -> Optional[int]:
+        raise NotImplementedError()
+
+    @abstractmethod
     def succ(self, index: int) -> Optional[Tuple[int, N]]:
         raise NotImplementedError()
 
@@ -103,7 +113,14 @@ class ValRange(Generic[N], metaclass=ABCMeta):
 @dataclass(frozen=True)
 class IntValRange(ValRange[int]):
     min_val: int
+    init_val: int
     max_val: int
+
+    def render(self, value: int) -> str:
+        return str(value)
+
+    def set_value(self, value: int) -> Optional[int]:
+        return value if value >= self.min_val and value <= self.max_val else None
 
     def succ(self, index: int) -> Optional[Tuple[int, int]]:
         if index < self.min_val or index >= self.max_val:
@@ -120,9 +137,29 @@ class IntValRange(ValRange[int]):
             return new_index, new_index
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ChoiceValRange(ValRange[N]):
-    options: List[N]
+    @classmethod
+    def new(
+        cls,
+        options: List[N],
+        renderer: Callable[[N], str]
+    ) -> 'ChoiceValRange[N]':
+        options_dict = {i: n for i, n in enumerate(options)}
+        rev_options_dict = {renderer(n): i for i, n in enumerate(options)}
+        return cls(len(options), options_dict, rev_options_dict, renderer)
+
+    length: int
+    options: Dict[int, N]
+    rev_options: Dict[str, int]
+    renderer: Callable[[N], str]
+
+    def render(self, value: N) -> str:
+        return self.renderer(value)  # type: ignore
+
+    def set_value(self, value: N) -> Optional[int]:
+        rep = self.render(value)
+        return self.rev_options.get(rep)
 
     def succ(self, index: int) -> Optional[Tuple[int, N]]:
         if index < 0 or index < len(self.options) - 1:
@@ -139,24 +176,41 @@ class ChoiceValRange(ValRange[N]):
             return new_index, self.options[new_index]
 
 
-@dataclass(frozen=True)
-class KnobControl(Generic[N]):
+@dataclass(frozen=True, eq=False)
+class KnobControl(Generic[Y, N]):
     name: str
     sensitivity: int
     val_range: ValRange[N]
-    default_val: N
+    extractor: Callable[[Y], N]
 
 
-@dataclass
-class KnobState(Generic[N]):
-    control: KnobControl[N]
+@dataclass(eq=False)
+class KnobState(Generic[Y, N]):
+    control: KnobControl[Y, N]
     accum: int
     index: int
     val: N
 
     @classmethod
-    def initial(cls, control: KnobControl[N]) -> 'KnobState[N]':
-        return cls(control, 0, 0, control.default_val)
+    def initial(cls, control: KnobControl[Y, N], config: Y) -> 'KnobState[Y, N]':
+        val = control.extractor(config)  # type: ignore
+        index = control.val_range.set_value(val)
+        if index is None:
+            raise ValueError(f'Control {control.name} cannot set initial value {val}')
+        return cls(control, 0, index, val)
+
+    def update(self, config: Y) -> None:
+        new_val = self.control.extractor(config)  # type: ignore
+        new_index = self.control.val_range.set_value(new_val)
+        if new_index is None:
+            raise ValueError(f'Control {self.control.name} cannot set updated value {new_val}')
+        if self.index != new_index:
+            self.accum = 0
+        self.index = new_index
+        self.val = new_val
+
+    def rendered(self) -> str:
+        return self.control.val_range.render(self.val)
 
     def accumulate(self, diff: int) -> None:
         new_accum = self.accum + diff
@@ -179,26 +233,39 @@ class KnobState(Generic[N]):
 
 
 @dataclass
-class DeviceState:
-    knob_states: List[KnobState[Any]]
+class DeviceState(Generic[Y, N]):
+    knob_states: List[KnobState[Y, N]]
 
     @classmethod
-    def initial(cls, knob_controls: List[KnobControl]) -> 'DeviceState':
+    def initial(cls, knob_controls: List[KnobControl[Y, N]], config: Y) -> 'DeviceState':
         return DeviceState(
-            knob_states=[KnobState.initial(kc) for kc in knob_controls]
+            knob_states=[KnobState.initial(kc, config) for kc in knob_controls]
         )
 
 
 @dataclass(frozen=True)
 class MenuLayout:
-    device_knob_controls: List[KnobControl]
+    device_knob_controls: List[KnobControl[Config, Any]]
 
 
 def default_menu_layout() -> MenuLayout:
     return MenuLayout(
         device_knob_controls=[
-            KnobControl('Min Vel', 1, IntValRange(0, 127), 0),
-            KnobControl('Layout', 1, ChoiceValRange(['Horiz', 'Vert']), 0)
+            KnobControl(
+                'MinVel', 1,
+                IntValRange(0, 0, 127),
+                lambda c: c.min_velocity
+            ),
+            KnobControl(
+                'Layout', 1,
+                ChoiceValRange.new([v for v in Layout], lambda v: v.name),
+                lambda c: c.layout
+            ),
+            # KnobControl('Mode', 1, ChoiceValRange(['Tap', 'Pick'])),
+            # KnobControl('SemOff', 1, IntValRange(-63, 0, 64)),
+            # KnobControl('StrOff', 1, IntValRange(-11, 0, 12)),
+            # KnobControl('Scale', 1, ChoiceValRange(SCALES)),
+            # KnobControl('Root', 1, ChoiceValRange([n.name for n in NoteName]))
         ]
     )
 
@@ -219,6 +286,7 @@ class MenuState:
         if self.cur_page == Page.Device:
             for half_col, state in enumerate(self.device_state.knob_states):
                 msgs.append(HalfBlockMessage(constants.DISPLAY_MAX_ROWS - 1, half_col, state.control.name))
+                msgs.append(HalfBlockMessage(constants.DISPLAY_MAX_ROWS - 2, half_col, state.rendered()))
         elif self.cur_page == Page.Browse:
             pass
         elif self.cur_page == Page.Scales:
@@ -232,17 +300,18 @@ class MenuState:
         return self.redraw()
 
     @classmethod
-    def initial(cls, layout: MenuLayout) -> 'MenuState':
-        return cls(Page.Device, DeviceState.initial(layout.device_knob_controls))
+    def initial(cls, layout: MenuLayout, config: Config) -> 'MenuState':
+        return cls(Page.Device, DeviceState.initial(layout.device_knob_controls, config))
 
 
-class Menu(Component[Void, PushEvent, MenuMessage]):
-    def __init__(self, layout: MenuLayout):
+class Menu(Component[Config, PushEvent, MenuMessage]):
+    def __init__(self, layout: MenuLayout, config: Config):
         self._layout = layout
-        self._state = MenuState.initial(layout)
+        self._config = config
+        self._state = MenuState.initial(layout, config)
 
     def handle_reset(self) -> List[MenuMessage]:
-        self._state = MenuState.initial(self._layout)
+        self._state = MenuState.initial(self._layout, self._config)
         return self._state.redraw()
 
     def handle_event(self, event: PushEvent) -> List[MenuMessage]:
@@ -265,7 +334,13 @@ class Menu(Component[Void, PushEvent, MenuMessage]):
                     return [StringShiftMessage(-1)]
             else:
                 return []
+        elif isinstance(event, KnobEvent):
+            # TODO
+            return []
         return []
 
-    def handle_config(self, config: Void) -> List[MenuMessage]:
-        return config.absurd()
+    def handle_config(self, config: Config) -> List[MenuMessage]:
+        self._config = config
+        for state in self._state.device_state.knob_states:
+            state.update(config)
+        return self._state.redraw()

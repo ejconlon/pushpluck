@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pushpluck import constants
 from pushpluck.base import Void
 from pushpluck.component import MappedComponent, MappedComponentConfig, VoidComponentMessage
-from pushpluck.config import Config, Orientation
+from pushpluck.config import Config, Layout
 from pushpluck.fretboard import StringPos
 from pushpluck.pos import Pos
 from typing import List, Optional
@@ -11,7 +11,7 @@ from typing import List, Optional
 @dataclass(frozen=True)
 class ViewportConfig(MappedComponentConfig):
     num_strings: int
-    orientation: Orientation
+    layout: Layout
     str_offset: int
     fret_offset: int
 
@@ -19,7 +19,7 @@ class ViewportConfig(MappedComponentConfig):
     def extract(cls, root_config: Config) -> 'ViewportConfig':
         return cls(
             num_strings=len(root_config.tuning),
-            orientation=root_config.orientation,
+            layout=root_config.layout,
             str_offset=root_config.str_offset,
             fret_offset=root_config.fret_offset
         )
@@ -44,7 +44,7 @@ class Viewport(MappedComponent[Config, ViewportConfig, Void, VoidComponentMessag
     def str_pos_from_pad_pos(self, pos: Pos) -> Optional[StringPos]:
         # TODO support diff number of strings and orientation
         assert self._config.num_strings == 6
-        assert self._config.orientation == Orientation.Left
+        assert self._config.layout == Layout.Horiz
         assert self._config.str_offset == 0
         if pos.row == 0 or pos.row == 7:
             return None
@@ -60,7 +60,7 @@ class Viewport(MappedComponent[Config, ViewportConfig, Void, VoidComponentMessag
     def pad_pos_from_str_pos(self, str_pos: StringPos) -> Optional[Pos]:
         # TODO support diff number of strings and orientation
         assert self._config.num_strings == 6
-        assert self._config.orientation == Orientation.Left
+        assert self._config.layout == Layout.Horiz
         assert self._config.str_offset == 0
         row = str_pos.str_index + 1 - self._config.str_offset
         col = str_pos.fret - self._config.fret_offset

@@ -78,9 +78,9 @@ class ControlPadColor(PadColor):
 
 
 @unique
-class Orientation(Enum):
-    Left = auto()
-    Up = auto()
+class Layout(Enum):
+    Horiz = auto()
+    Vert = auto()
 
 
 # TODO This needs to be hierarchical
@@ -99,7 +99,7 @@ class Config:
     instrument_name: str
     tuning_name: str
     tuning: List[int]
-    orientation: Orientation
+    layout: Layout
     scale: Scale
     root: NoteName
     min_velocity: int
@@ -112,7 +112,7 @@ def init_config(min_velocity: int) -> Config:
         instrument_name='Guitar',
         tuning_name='Standard',
         tuning=constants.STANDARD_TUNING,
-        orientation=Orientation.Left,
+        layout=Layout.Horiz,
         scale=SCALE_LOOKUP['Major'],
         root=NoteName.C,
         min_velocity=min_velocity,

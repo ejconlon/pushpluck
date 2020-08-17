@@ -23,13 +23,13 @@ def test_note_conversion(note: int, name: NoteName, octave: int) -> None:
     [
         ('Major', NoteName.C, NoteName.C, True, True),
         ('Major', NoteName.C, NoteName.A, False, True),
-        ('Major', NoteName.C, NoteName.As, False, False),
+        ('Major', NoteName.C, NoteName.Bb, False, False),
         ('Chromatic', NoteName.C, NoteName.C, True, True),
         ('Chromatic', NoteName.C, NoteName.A, False, True),
-        ('Chromatic', NoteName.C, NoteName.As, False, True),
+        ('Chromatic', NoteName.C, NoteName.Bb, False, True),
         ('Minor', NoteName.A, NoteName.C, False, True),
         ('Minor', NoteName.A, NoteName.A, True, True),
-        ('Minor', NoteName.A, NoteName.As, False, False)
+        ('Minor', NoteName.A, NoteName.Bb, False, False)
     ]
 )
 def test_scale(
