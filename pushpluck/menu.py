@@ -4,7 +4,7 @@ from enum import Enum, auto, unique
 from pushpluck import constants
 from pushpluck.config import Config, Layout
 from pushpluck.constants import ButtonCC, ButtonIllum, KnobGroup
-from pushpluck.push import PushEvent, ButtonEvent, KnobEvent, PushOutput
+from pushpluck.push import PushEvent, ButtonEvent, KnobEvent, PushInterface
 # from pushpluck.scale import SCALES, NoteName
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
@@ -221,21 +221,30 @@ class MenuLayout:
 
 
 def default_menu_layout() -> MenuLayout:
+    sens = 2
     return MenuLayout(
         device_knob_controls=[
             KnobControl(
-                'MinVel', 2,
+                'MinVel', sens,
                 IntValRange(0, 127),
                 lambda c: c.min_velocity
             ),
             KnobControl(
-                'Layout', 2,
+                'Layout', sens,
                 ChoiceValRange.new([v for v in Layout], lambda v: v.name),
                 lambda c: c.layout
             ),
-            # KnobControl('Mode', 1, ChoiceValRange(['Tap', 'Pick'])),
-            # KnobControl('SemOff', 1, IntValRange(-63, 0, 64)),
-            # KnobControl('StrOff', 1, IntValRange(-11, 0, 12)),
+            # KnobControl('Mode', sens, ChoiceValRange(['Tap', 'Pick'])),
+            KnobControl(
+                'SemOff', sens,
+                IntValRange(-63, 64),
+                lambda c: c.fret_offset
+            ),
+            KnobControl(
+                'StrOff', sens,
+                IntValRange(-11, 12),
+                lambda c: c.str_offset
+            ),
             # KnobControl('Scale', 1, ChoiceValRange(SCALES)),
             # KnobControl('Root', 1, ChoiceValRange([n.name for n in NoteName]))
         ]
@@ -248,7 +257,7 @@ class MenuState:
     cur_page: Page
     device_state: DeviceState
 
-    def redraw(self, push: PushOutput) -> None:
+    def redraw(self, push: PushInterface) -> None:
         # Clear owned components
         push.lcd_reset()
         push.chan_sel_reset()
@@ -273,29 +282,19 @@ class MenuState:
         else:
             raise ValueError()
 
-    def set_page(self, new_page: Page) -> bool:
-        if new_page != self.cur_page:
-            self.cur_page = new_page
-            return True
-        else:
-            return False
-
-    def _set_config(self, new_config: Config) -> bool:
-        assert new_config != self.config
-        updated = False
+    def _set_config(self, new_config: Config) -> None:
+        self.device_state.update(new_config)
         self.config = new_config
-        updated = self.device_state.update(new_config) or updated
-        return updated
 
-    def shift_semitones(self, diff: int) -> bool:
+    def shift_semitones(self, diff: int) -> None:
         fret_offset = self.config.fret_offset + diff
         new_config = replace(self.config, fret_offset=fret_offset)
-        return self._set_config(new_config)
+        self._set_config(new_config)
 
-    def shift_strings(self, diff: int) -> bool:
+    def shift_strings(self, diff: int) -> None:
         str_offset = self.config.str_offset + diff
         new_config = replace(self.config, str_offset=str_offset)
-        return self._set_config(new_config)
+        self._set_config(new_config)
 
     @classmethod
     def initial(cls, layout: MenuLayout, config: Config) -> 'MenuState':
@@ -308,32 +307,41 @@ class Menu:
         self._init_config = config
         self._state = MenuState.initial(layout, config)
 
-    def handle_reset(self, push: PushOutput) -> Config:
+    def handle_reset(self, push: PushInterface) -> Config:
         self._state = MenuState.initial(self._layout, self._init_config)
         self._state.redraw(push)
         return self._state.config
 
-    def handle_event(self, push: PushOutput, event: PushEvent) -> Optional[Config]:
+    def handle_event(self, push: PushInterface, event: PushEvent) -> Optional[Config]:
         updated = False
         if isinstance(event, ButtonEvent):
             if event.pressed:
                 page = Page.from_input_button(event.button)
                 if page is not None:
-                    updated = self._state.set_page(page)
+                    if self._state.cur_page != page:
+                        self._state.cur_page = page
+                        updated = True
                 elif event.button == ButtonCC.OctaveDown:
-                    updated = self._state.shift_semitones(-12)
+                    self._state.shift_semitones(-12)
+                    updated = True
                 elif event.button == ButtonCC.OctaveUp:
-                    updated = self._state.shift_semitones(12)
+                    self._state.shift_semitones(12)
+                    updated = True
                 elif event.button == ButtonCC.Left:
-                    updated = self._state.shift_semitones(-1)
+                    self._state.shift_semitones(-1)
+                    updated = True
                 elif event.button == ButtonCC.Right:
-                    updated = self._state.shift_semitones(1)
+                    self._state.shift_semitones(1)
+                    updated = True
                 elif event.button == ButtonCC.Up:
-                    updated = self._state.shift_strings(1)
+                    self._state.shift_strings(1)
+                    updated = True
                 elif event.button == ButtonCC.Down:
-                    updated = self._state.shift_strings(-1)
+                    self._state.shift_strings(-1)
+                    updated = True
         elif isinstance(event, KnobEvent):
-            if event.group == KnobGroup.Center:
+            if event.group == KnobGroup.Center and \
+                    event.offset < len(self._state.device_state.knob_states):
                 state = self._state.device_state.knob_states[event.offset]
                 diff = 1 if event.clockwise else -1
                 updated = state.accumulate(diff)

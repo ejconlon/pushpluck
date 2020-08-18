@@ -3,7 +3,7 @@ from pushpluck.config import ColorScheme, Config, NoteType, PadColorMapper
 from pushpluck.color import Color
 from pushpluck.fretboard import Fretboard, FretboardMessage, TriggerEvent
 from pushpluck.pos import Pos
-from pushpluck.push import PadEvent, PushOutput
+from pushpluck.push import PadEvent, PushInterface
 from pushpluck.midi import MidiSink
 from pushpluck.scale import NoteName, Scale, ScaleClassifier, name_and_octave_from_note
 from pushpluck.viewport import Viewport
@@ -65,19 +65,20 @@ class Pads:
         self._fretboard = fretboard
         self._viewport = viewport
         self._state = PadsState.default()
+        self._reset_pad_colors()
 
     def _get_pad_color(self, pos: Pos) -> Optional[Color]:
         pad = self._state.lookup[pos]
         return pad.color(self._scheme)
 
-    def _redraw_pos(self, push: PushOutput, pos: Pos):
+    def _redraw_pos(self, push: PushInterface, pos: Pos):
         color = self._get_pad_color(pos)
         if color is None:
             push.pad_led_off(pos)
         else:
             push.pad_set_color(pos, color)
 
-    def _redraw(self, push: PushOutput) -> None:
+    def _redraw(self, push: PushInterface) -> None:
         for pos in Pos.iter_all():
             self._redraw_pos(push, pos)
 
@@ -104,7 +105,7 @@ class Pads:
             mapper = self._make_pad_color_mapper(classifier, pos)
             self._state.lookup[pos].mapper = mapper
 
-    def handle_event(self, push: PushOutput, sink: MidiSink, event: PadEvent) -> None:
+    def handle_event(self, push: PushInterface, sink: MidiSink, event: PadEvent) -> None:
         str_pos = self._viewport.str_pos_from_pad_pos(event.pos)
         if str_pos is not None:
             trigger_event = TriggerEvent(str_pos, event.velocity)
@@ -112,31 +113,27 @@ class Pads:
             for fret_msg in fret_msgs:
                 self._handle_fret_msg(push, sink, fret_msg)
 
-    def handle_config(self, push: PushOutput, sink: MidiSink, root_config: Config, reset: bool) -> None:
+    def handle_config(self, push: PushInterface, sink: MidiSink, root_config: Config, reset: bool) -> None:
         fret_msgs = self._fretboard.handle_config(root_config, reset)
-        if fret_msgs:
+        if fret_msgs is not None:
             for fret_msg in fret_msgs:
                 self._handle_fret_msg(push, sink, fret_msg)
-            # If there are note-offs, force a reset of pads
+            # If there are note-offs or updated config, force reset and redraw of pads
             reset = True
-        self._viewport.handle_config(root_config, reset)
+        unit = self._viewport.handle_config(root_config, reset)
+        if unit is not None:
+            # Likewise for viewport changes
+            reset = True
         config = PadsConfig.extract(root_config)
         if config != self._config or reset:
             self._config = config
+            self._reset_pad_colors()
             self._redraw(push)
 
-    def _handle_fret_msg(self, push: PushOutput, sink: MidiSink, msg: FretboardMessage) -> None:
+    def _handle_fret_msg(self, push: PushInterface, sink: MidiSink, msg: FretboardMessage) -> None:
         sink.send_msg(msg.msg)
         pad_pos = self._viewport.pad_pos_from_str_pos(msg.str_pos)
         if pad_pos is not None:
             pressed = msg.is_sounding()
             self._state.lookup[pad_pos].pressed = pressed
             self._redraw_pos(push, pad_pos)
-
-    # def handle_reset(self, push: PushOutput, sink: MidiSink) -> None:
-    #     fret_msgs = self._fretboard.handle_reset()
-    #     for fret_msg in fret_msgs:
-    #         self._handle_fret_msg(push, sink, fret_msg)
-    #     self._viewport.handle_reset()
-    #     self._reset_pad_colors()
-    #     self._redraw(push)

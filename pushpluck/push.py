@@ -206,35 +206,26 @@ def push_ports_context(
         logging.info('closed ports')
 
 
-class PushOutput(Resettable):
-    def __init__(self, midi_out: MidiOutput) -> None:
-        self._midi_out = midi_out
-
-    def pad_led_on(self, pos: Pos, value: int = 100) -> None:
-        msg = make_led_msg(pos, value)
-        self._midi_out.send_msg(msg)
-
+class PushInterface(Resettable, metaclass=ABCMeta):
+    @abstractmethod
     def pad_led_off(self, pos: Pos) -> None:
-        self.pad_led_on(pos, 0)
+        raise NotImplementedError()
 
+    @abstractmethod
     def pad_set_color(self, pos: Pos, color: Color) -> None:
-        msg = make_color_msg(pos, color)
-        self._midi_out.send_msg(msg)
+        raise NotImplementedError()
 
     def pad_reset(self) -> None:
         for pos in Pos.iter_all():
             self.pad_led_off(pos)
 
+    @abstractmethod
+    def lcd_display_raw(self, row: int, line_col: int, text: str) -> None:
+        raise NotImplementedError()
+
     def lcd_display_line(self, row: int, text: str) -> None:
         text = text.ljust(constants.DISPLAY_MAX_LINE_LEN, ' ')
         self.lcd_display_raw(row, 0, text)
-
-    def lcd_display_raw(self, row: int, line_col: int, text: str) -> None:
-        assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
-        assert line_col >= 0
-        assert len(text) + line_col <= constants.DISPLAY_MAX_LINE_LEN
-        msg = make_lcd_msg(row, line_col, text)
-        self._midi_out.send_msg(msg)
 
     def lcd_display_block(self, row: int, block_col: int, text: str) -> None:
         assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
@@ -242,8 +233,7 @@ class PushOutput(Resettable):
         assert len(text) <= constants.DISPLAY_BLOCK_LEN
         text = text.ljust(constants.DISPLAY_BLOCK_LEN, ' ')
         line_col = constants.DISPLAY_BLOCK_LEN * block_col
-        msg = make_lcd_msg(row, line_col, text)
-        self._midi_out.send_msg(msg)
+        self.lcd_display_raw(row, line_col, text)
 
     def lcd_display_half_block(self, row: int, half_col: int, text: str) -> None:
         block_col = half_col // 2
@@ -257,15 +247,95 @@ class PushOutput(Resettable):
             offset = 0
             just_text = text.ljust(constants.DISPLAY_HALF_BLOCK_LEN + 1, ' ')
         else:
-            offset = constants.DISPLAY_HALF_BLOCK_LEN
-            just_text = ' ' + text.ljust(constants.DISPLAY_HALF_BLOCK_LEN, ' ')
+            offset = constants.DISPLAY_HALF_BLOCK_LEN + 1
+            just_text = text.ljust(constants.DISPLAY_HALF_BLOCK_LEN, ' ')
         line_col = constants.DISPLAY_BLOCK_LEN * block_col + offset
-        msg = make_lcd_msg(row, line_col, just_text)
-        self._midi_out.send_msg(msg)
+        self.lcd_display_raw(row, line_col, just_text)
 
     def lcd_reset(self) -> None:
         for row in range(constants.DISPLAY_MAX_ROWS):
             self.lcd_display_line(row, '')
+
+    @abstractmethod
+    def button_set_illum(self, button: ButtonCC, illum: ButtonIllum) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def button_off(self, button: ButtonCC) -> None:
+        raise NotImplementedError()
+
+    def button_reset(self) -> None:
+        for button in ButtonCC:
+            self.button_off(button)
+
+    @abstractmethod
+    def time_div_off(self, time_div: TimeDivCC) -> None:
+        raise NotImplementedError()
+
+    def time_div_reset(self) -> None:
+        # TODO
+        # for time_div in TimeDivCC:
+        #     self.time_div_off(time_div)
+        pass
+
+    @abstractmethod
+    def chan_sel_set_color(self, cs_pos: ChanSelPos, illum: ButtonIllum, color: ButtonColor) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def chan_sel_off(self, cs_pos: ChanSelPos) -> None:
+        raise NotImplementedError()
+
+    def chan_sel_reset(self) -> None:
+        # TODO
+        # for cs_pos in ChanSelPos.iter_all():
+        #     self.chan_sel_off(cs_pos)
+        pass
+
+    @abstractmethod
+    def grid_sel_set_color(self, gs_pos: GridSelPos, color: Color) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def grid_sel_off(self, gs_pos: GridSelPos) -> None:
+        raise NotImplementedError()
+
+    def grid_sel_reset(self) -> None:
+        # TODO
+        # for gs_pos in GridSelPos.iter_all():
+        #     self.grid_sel_off(gs_pos)
+        pass
+
+    def reset(self) -> None:
+        self.lcd_reset()
+        self.button_reset()
+        self.pad_reset()
+        self.grid_sel_reset()
+        self.chan_sel_reset()
+        self.time_div_reset()
+
+
+class PushOutput(PushInterface):
+    def __init__(self, midi_out: MidiOutput) -> None:
+        self._midi_out = midi_out
+
+    def _pad_led_on(self, pos: Pos, value: int = 100) -> None:
+        msg = make_led_msg(pos, value)
+        self._midi_out.send_msg(msg)
+
+    def pad_led_off(self, pos: Pos) -> None:
+        self._pad_led_on(pos, 0)
+
+    def pad_set_color(self, pos: Pos, color: Color) -> None:
+        msg = make_color_msg(pos, color)
+        self._midi_out.send_msg(msg)
+
+    def lcd_display_raw(self, row: int, line_col: int, text: str) -> None:
+        assert row >= 0 and row < constants.DISPLAY_MAX_ROWS
+        assert line_col >= 0
+        assert len(text) + line_col <= constants.DISPLAY_MAX_LINE_LEN
+        msg = make_lcd_msg(row, line_col, text)
+        self._midi_out.send_msg(msg)
 
     def button_set_illum(self, button: ButtonCC, illum: ButtonIllum) -> None:
         msg = FrozenMessage(type='control_change', control=button.value, value=illum.value)
@@ -275,52 +345,20 @@ class PushOutput(Resettable):
         msg = FrozenMessage(type='control_change', control=button.value, value=0)
         self._midi_out.send_msg(msg)
 
-    def button_reset(self) -> None:
-        for button in ButtonCC:
-            self.button_off(button)
-
     def time_div_off(self, time_div: TimeDivCC) -> None:
-        # TODO
-        pass
-
-    def time_div_reset(self) -> None:
-        for time_div in TimeDivCC:
-            self.time_div_off(time_div)
+        raise NotImplementedError()
 
     def chan_sel_set_color(self, cs_pos: ChanSelPos, illum: ButtonIllum, color: ButtonColor) -> None:
-        # TODO
-        pass
+        raise NotImplementedError()
 
     def chan_sel_off(self, cs_pos: ChanSelPos) -> None:
-        # TODO
-        pass
-
-    def chan_sel_reset(self) -> None:
-        for cs_pos in ChanSelPos.iter_all():
-            self.chan_sel_off(cs_pos)
+        raise NotImplementedError()
 
     def grid_sel_set_color(self, gs_pos: GridSelPos, color: Color) -> None:
-        # TODO
-        pass
+        raise NotImplementedError()
 
     def grid_sel_off(self, gs_pos: GridSelPos) -> None:
-        # TODO
-        pass
-
-    def grid_sel_reset(self) -> None:
-        for gs_pos in GridSelPos.iter_all():
-            self.grid_sel_off(gs_pos)
-
-    def reset(self) -> None:
-        logging.info('resetting push display')
-        self.lcd_reset()
-
-        logging.info('resetting push controls')
-        self.pad_reset()
-        self.grid_sel_reset()
-        self.chan_sel_reset()
-        self.button_reset()
-        self.time_div_reset()
+        raise NotImplementedError()
 
 
 def rainbow(push: PushOutput) -> None:

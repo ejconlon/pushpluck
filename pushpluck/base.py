@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 from typing import TypeVar
 
 
@@ -31,3 +32,15 @@ class Void:
         `void.absurd()` since it's impossible for `void` to exist in the first place.
         """
         raise Exception('Absurd')
+
+
+@dataclass(frozen=True)
+class Unit:
+    """ A simple type with one inhabitant (according to eq and hash). """
+
+    @staticmethod
+    def instance() -> 'Unit':
+        return _UNIT_SINGLETON
+
+
+_UNIT_SINGLETON = Unit()

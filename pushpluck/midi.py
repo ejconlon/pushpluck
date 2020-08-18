@@ -19,13 +19,13 @@ def is_note_on_msg(msg: FrozenMessage) -> bool:
     return msg.type == 'note_on' and msg.velocity > 0
 
 
-class MidiSource(Closeable, metaclass=ABCMeta):
+class MidiSource(metaclass=ABCMeta):
     @abstractmethod
     def recv_msg(self) -> FrozenMessage:
         raise NotImplementedError()
 
 
-class MidiSink(Resettable, Closeable, metaclass=ABCMeta):
+class MidiSink(metaclass=ABCMeta):
     @abstractmethod
     def send_msg(self, msg: FrozenMessage) -> None:
         raise NotImplementedError()
@@ -62,7 +62,7 @@ class MidiInput(MidiSource, Closeable):
         return msg
 
 
-class MidiOutput(MidiSink, Closeable):
+class MidiOutput(MidiSink, Resettable, Closeable):
     @classmethod
     def open(
         cls,
