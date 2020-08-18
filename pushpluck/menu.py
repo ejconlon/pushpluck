@@ -135,12 +135,45 @@ class ChoiceValRange(ValRange[N]):
             return new_index, self.options[new_index]
 
 
+class Lens(Generic[Y, N], metaclass=ABCMeta):
+    @abstractmethod
+    def get_value(self, struct: Y) -> N:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def set_value(self, struct: Y, value: N) -> Y:
+        raise NotImplementedError()
+
+
+@dataclass(frozen=True, eq=False)
+class LensPair(Lens[Y, N]):
+    getter: Callable[[Y], N]
+    setter: Callable[[Y, N], Y]
+
+    def get_value(self, struct: Y) -> N:
+        return self.getter(struct)  # type: ignore
+
+    def set_value(self, struct: Y, value: N) -> Y:
+        return self.setter(struct, value)  # type: ignore
+
+
+class DataclassLens(Lens[Y, N]):
+    def __init__(self, field_name: str) -> None:
+        self._field_name = field_name
+
+    def get_value(self, struct: Y) -> N:
+        return getattr(struct, self._field_name)
+
+    def set_value(self, struct: Y, value: N) -> Y:
+        return replace(struct, **{self._field_name: value})
+
+
 @dataclass(frozen=True, eq=False)
 class KnobControl(Generic[Y, N]):
     name: str
     sensitivity: int
     val_range: ValRange[N]
-    extractor: Callable[[Y], N]
+    lens: Lens[Y, N]
 
 
 @dataclass(eq=False)
@@ -152,14 +185,14 @@ class KnobState(Generic[Y, N]):
 
     @classmethod
     def initial(cls, control: KnobControl[Y, N], config: Y) -> 'KnobState[Y, N]':
-        val = control.extractor(config)  # type: ignore
+        val = control.lens.get_value(config)
         index = control.val_range.set_value(val)
         if index is None:
             raise ValueError(f'Control {control.name} cannot set initial value {val}')
         return cls(control, 0, index, val)
 
     def update(self, config: Y) -> bool:
-        new_val = self.control.extractor(config)  # type: ignore
+        new_val = self.control.lens.get_value(config)
         new_index = self.control.val_range.set_value(new_val)
         if new_index is None:
             raise ValueError(f'Control {self.control.name} cannot set updated value {new_val}')
@@ -174,9 +207,10 @@ class KnobState(Generic[Y, N]):
     def rendered(self) -> str:
         return self.control.val_range.render(self.val)
 
-    def accumulate(self, diff: int) -> bool:
+    def accumulate(self, config: Y, diff: int) -> Optional[Y]:
         updated = False
         new_accum = self.accum + diff
+        # First set internal values
         if new_accum <= -self.control.sensitivity:
             pair = self.control.val_range.pred(self.index)
             if pair is None:
@@ -195,7 +229,8 @@ class KnobState(Generic[Y, N]):
                 updated = True
         else:
             self.accum = new_accum
-        return updated
+        # Then assign config
+        return self.control.lens.set_value(config, self.val) if updated else None
 
 
 @dataclass
@@ -221,29 +256,30 @@ class MenuLayout:
 
 
 def default_menu_layout() -> MenuLayout:
-    sens = 2
+    high_sens = 1
+    low_sens = 4
     return MenuLayout(
         device_knob_controls=[
             KnobControl(
-                'MinVel', sens,
+                'MinVel', high_sens,
                 IntValRange(0, 127),
-                lambda c: c.min_velocity
+                DataclassLens('min_velocity')
             ),
             KnobControl(
-                'Layout', sens,
+                'Layout', low_sens,
                 ChoiceValRange.new([v for v in Layout], lambda v: v.name),
-                lambda c: c.layout
+                DataclassLens('layout')
             ),
             # KnobControl('Mode', sens, ChoiceValRange(['Tap', 'Pick'])),
             KnobControl(
-                'SemOff', sens,
+                'SemOff', low_sens,
                 IntValRange(-63, 64),
-                lambda c: c.fret_offset
+                DataclassLens('fret_offset')
             ),
             KnobControl(
-                'StrOff', sens,
+                'StrOff', low_sens,
                 IntValRange(-11, 12),
-                lambda c: c.str_offset
+                DataclassLens('str_offset')
             ),
             # KnobControl('Scale', 1, ChoiceValRange(SCALES)),
             # KnobControl('Root', 1, ChoiceValRange([n.name for n in NoteName]))
@@ -296,6 +332,16 @@ class MenuState:
         new_config = replace(self.config, str_offset=str_offset)
         self._set_config(new_config)
 
+    def turn_knob(self, offset: int, diff: int) -> bool:
+        if self.cur_page == Page.Device:
+            if offset >= 0 and offset < len(self.device_state.knob_states):
+                state = self.device_state.knob_states[offset]
+                new_config = state.accumulate(self.config, diff)
+                if new_config is not None:
+                    self.config = new_config
+                    return True
+        return False
+
     @classmethod
     def initial(cls, layout: MenuLayout, config: Config) -> 'MenuState':
         return cls(config, Page.Device, DeviceState.initial(layout.device_knob_controls, config))
@@ -340,11 +386,9 @@ class Menu:
                     self._state.shift_strings(-1)
                     updated = True
         elif isinstance(event, KnobEvent):
-            if event.group == KnobGroup.Center and \
-                    event.offset < len(self._state.device_state.knob_states):
-                state = self._state.device_state.knob_states[event.offset]
+            if event.group == KnobGroup.Center:
                 diff = 1 if event.clockwise else -1
-                updated = state.accumulate(diff)
+                updated = self._state.turn_knob(event.offset, diff)
 
         if updated:
             self._state.redraw(push)
