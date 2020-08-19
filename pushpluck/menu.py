@@ -386,16 +386,28 @@ class Menu:
                     self._state.shift_semitones(12)
                     updated = True
                 elif event.button == ButtonCC.Left:
-                    self._state.shift_semitones(-1)
+                    if self._state.config.layout == Layout.Horiz:
+                        self._state.shift_semitones(-1)
+                    else:
+                        self._state.shift_strings(-1)
                     updated = True
                 elif event.button == ButtonCC.Right:
-                    self._state.shift_semitones(1)
+                    if self._state.config.layout == Layout.Horiz:
+                        self._state.shift_semitones(1)
+                    else:
+                        self._state.shift_strings(1)
                     updated = True
                 elif event.button == ButtonCC.Up:
-                    self._state.shift_strings(1)
+                    if self._state.config.layout == Layout.Horiz:
+                        self._state.shift_strings(1)
+                    else:
+                        self._state.shift_semitones(-1)
                     updated = True
                 elif event.button == ButtonCC.Down:
-                    self._state.shift_strings(-1)
+                    if self._state.config.layout == Layout.Horiz:
+                        self._state.shift_strings(-1)
+                    else:
+                        self._state.shift_semitones(1)
                     updated = True
         elif isinstance(event, KnobEvent):
             if event.group == KnobGroup.Center:

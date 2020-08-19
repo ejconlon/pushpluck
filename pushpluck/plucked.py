@@ -38,6 +38,7 @@ class Plucked(Resettable):
 
     def reset(self) -> None:
         logging.info('plucked resetting')
+        self._shadow.reset()
         with self._shadow.context() as push:
             config = self._menu.handle_reset(push)
             self._pads.handle_config(push, self._midi_processed, config, reset=True)

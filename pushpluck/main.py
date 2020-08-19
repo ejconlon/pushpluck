@@ -45,7 +45,7 @@ def make_parser() -> ArgumentParser:
     parser.add_argument('--push-delay', type=float, default=constants.DEFAULT_PUSH_DELAY)
     parser.add_argument('--push-port', default=constants.DEFAULT_PUSH_PORT_NAME)
     parser.add_argument('--processed-port', default=constants.DEFAULT_PROCESSED_PORT_NAME)
-    parser.add_argument('--min-velocity', type=int, default=0)
+    parser.add_argument('--min-velocity', type=int, default=20)
     return parser
 
 

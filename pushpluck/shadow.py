@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pushpluck import constants
+from pushpluck.base import Resettable
 from pushpluck.color import Color
 from pushpluck.push import PushInterface, ButtonCC, ButtonIllum, ButtonColor, TimeDivCC
 from pushpluck.pos import Pos, GridSelPos, ChanSelPos
@@ -59,9 +60,13 @@ class PushState:
         )
 
 
-class PushShadow:
+class PushShadow(Resettable):
     def __init__(self, push: PushInterface) -> None:
         self._push = push
+        self._state = PushState.reset()
+
+    def reset(self) -> None:
+        self._push.reset()
         self._state = PushState.reset()
 
     @contextmanager
@@ -85,11 +90,12 @@ class PushShadow:
 
     def _emit_pads(self, diff_state: PushState) -> None:
         for pos, new_color in diff_state.pads.items():
-            old_color = self._state.pads[pos]
+            old_color = self._state.pads.get(pos)
             if old_color != new_color:
                 if new_color is None:
                     self._push.pad_led_off(pos)
-                    del self._state.pads[pos]
+                    if pos in self._state.pads:
+                        del self._state.pads[pos]
                 else:
                     self._push.pad_set_color(pos, new_color)
                     self._state.pads[pos] = new_color
