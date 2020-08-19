@@ -38,16 +38,28 @@ class Viewport(MappedComponent[Config, ViewportConfig, Unit]):
         self._config = config
         return Unit.instance()
 
+    def _total_str_offset(self) -> int:
+        max_str_dim = constants.NUM_PAD_ROWS if self._config.layout == Layout.Horiz else constants.NUM_PAD_COLS
+        offset = 0
+        blanks = max_str_dim - self._config.num_strings
+        if blanks > 0:
+            offset -= blanks // 2
+        return offset + self._config.str_offset
+
     def str_pos_from_pad_pos(self, pos: Pos) -> Optional[StringPos]:
-        # TODO support diff number of strings and orientation
-        assert self._config.num_strings == 6
-        assert self._config.layout == Layout.Horiz
-        assert self._config.str_offset == 0
-        if pos.row == 0 or pos.row == 7:
+        str_index: int
+        fret: int
+        if self._config.layout == Layout.Horiz:
+            str_index = pos.row
+            fret = pos.col
+        else:
+            str_index = pos.col
+            fret = constants.NUM_PAD_ROWS - pos.row - 1
+        str_index += self._total_str_offset()
+        fret += self._config.fret_offset
+        if str_index < 0 or str_index >= self._config.num_strings:
             return None
         else:
-            str_index = pos.row - 1
-            fret = pos.col + self._config.fret_offset
             return StringPos(str_index=str_index, fret=fret)
 
     def str_pos_from_input_note(self, note: int) -> Optional[StringPos]:
@@ -55,12 +67,16 @@ class Viewport(MappedComponent[Config, ViewportConfig, Unit]):
         return self.str_pos_from_pad_pos(pos) if pos is not None else None
 
     def pad_pos_from_str_pos(self, str_pos: StringPos) -> Optional[Pos]:
-        # TODO support diff number of strings and orientation
-        assert self._config.num_strings == 6
-        assert self._config.layout == Layout.Horiz
-        assert self._config.str_offset == 0
-        row = str_pos.str_index + 1 - self._config.str_offset
-        col = str_pos.fret - self._config.fret_offset
+        str_dim = str_pos.str_index - self._total_str_offset()
+        fret_dim = str_pos.fret - self._config.fret_offset
+        row: int
+        col: int
+        if self._config.layout == Layout.Horiz:
+            row = str_dim
+            col = fret_dim
+        else:
+            row = constants.NUM_PAD_ROWS - fret_dim - 1
+            col = str_dim
         if row < 0 or row >= constants.NUM_PAD_ROWS:
             return None
         elif col < 0 or col >= constants.NUM_PAD_COLS:
