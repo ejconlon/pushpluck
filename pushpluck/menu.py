@@ -2,10 +2,10 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum, auto, unique
 from pushpluck import constants
-from pushpluck.config import Config, Layout
+from pushpluck.config import Config, Layout, PlayMode
 from pushpluck.constants import ButtonCC, ButtonIllum, KnobGroup
 from pushpluck.push import PushEvent, ButtonEvent, KnobEvent, PushInterface
-# from pushpluck.scale import SCALES, NoteName
+from pushpluck.scale import SCALES, NoteName
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 
@@ -121,14 +121,14 @@ class ChoiceValRange(ValRange[N]):
         return self.rev_options.get(rep)
 
     def succ(self, index: int) -> Optional[Tuple[int, N]]:
-        if index < 0 or index < len(self.options) - 1:
+        if index >= len(self.options) - 1:
             return None
         else:
             new_index = index + 1
             return new_index, self.options[new_index]
 
     def pred(self, index: int) -> Optional[Tuple[int, N]]:
-        if index <= 0 or index >= len(self.options):
+        if index <= 0:
             return None
         else:
             new_index = index - 1
@@ -270,7 +270,11 @@ def default_menu_layout() -> MenuLayout:
                 ChoiceValRange.new([v for v in Layout], lambda v: v.name),
                 DataclassLens('layout')
             ),
-            # KnobControl('Mode', sens, ChoiceValRange(['Tap', 'Pick'])),
+            KnobControl(
+                'Mode', low_sens,
+                ChoiceValRange.new([v for v in PlayMode], lambda v: v.name),
+                DataclassLens('play_mode')
+            ),
             KnobControl(
                 'SemOff', low_sens,
                 IntValRange(-63, 64),
@@ -281,8 +285,16 @@ def default_menu_layout() -> MenuLayout:
                 IntValRange(-11, 12),
                 DataclassLens('str_offset')
             ),
-            # KnobControl('Scale', 1, ChoiceValRange(SCALES)),
-            # KnobControl('Root', 1, ChoiceValRange([n.name for n in NoteName]))
+            KnobControl(
+                'Scale', low_sens,
+                ChoiceValRange.new(SCALES, lambda v: v.name[:constants.DISPLAY_HALF_BLOCK_LEN]),
+                DataclassLens('scale')
+            ),
+            KnobControl(
+                'Root', low_sens,
+                ChoiceValRange.new([v for v in NoteName], lambda v: v.name),
+                DataclassLens('root')
+            )
         ]
     )
 

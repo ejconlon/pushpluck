@@ -83,6 +83,12 @@ class Layout(Enum):
     Vert = auto()
 
 
+@unique
+class PlayMode(Enum):
+    Tap = auto()
+    Pick = auto()
+
+
 # TODO This needs to be hierarchical
 # Each instrument has a default orientation and tuning
 # As well as multiple possible tunings
@@ -100,6 +106,7 @@ class Config:
     tuning_name: str
     tuning: List[int]
     layout: Layout
+    play_mode: PlayMode
     scale: Scale
     root: NoteName
     min_velocity: int
@@ -113,6 +120,7 @@ def init_config(min_velocity: int) -> Config:
         tuning_name='Standard',
         tuning=constants.STANDARD_TUNING,
         layout=Layout.Horiz,
+        play_mode=PlayMode.Tap,
         scale=SCALE_LOOKUP['Major'],
         root=NoteName.C,
         min_velocity=min_velocity,
