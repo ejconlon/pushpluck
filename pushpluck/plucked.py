@@ -31,10 +31,20 @@ class Plucked(Resettable):
             elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Undo:
                 if event.pressed:
                     self.reset()
+            elif isinstance(event, ButtonEvent) and event.button == ButtonCC.Master:
+                if event.pressed:
+                    self.redraw()
             else:
                 config = self._menu.handle_event(push, event)
                 if config is not None:
                     self._pads.handle_config(push, self._midi_processed, config, reset=False)
+
+    def redraw(self) -> None:
+        logging.info('plucked redrawing')
+        self._shadow.reset()
+        with self._shadow.context() as push:
+            self._menu.redraw(push)
+            self._pads.redraw(push)
 
     def reset(self) -> None:
         logging.info('plucked resetting')

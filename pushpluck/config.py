@@ -87,6 +87,7 @@ class Layout(Enum):
 class PlayMode(Enum):
     Tap = auto()
     Pick = auto()
+    Poly = auto()
 
 
 # TODO This needs to be hierarchical

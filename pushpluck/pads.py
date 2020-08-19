@@ -78,7 +78,7 @@ class Pads:
         else:
             push.pad_set_color(pos, color)
 
-    def _redraw(self, push: PushInterface) -> None:
+    def redraw(self, push: PushInterface) -> None:
         for pos in Pos.iter_all():
             self._redraw_pos(push, pos)
 
@@ -128,7 +128,7 @@ class Pads:
         if config != self._config or reset:
             self._config = config
             self._reset_pad_colors()
-            self._redraw(push)
+            self.redraw(push)
 
     def _handle_fret_msg(self, push: PushInterface, sink: MidiSink, msg: FretboardMessage) -> None:
         sink.send_msg(msg.msg)

@@ -43,6 +43,7 @@ class Page(Enum):
 
 ACTIVE_BUTTONS: List[ButtonCC] = [
     ButtonCC.Undo,
+    ButtonCC.Master,
     ButtonCC.Left,
     ButtonCC.Right,
     ButtonCC.Up,
@@ -419,3 +420,6 @@ class Menu:
             return self._state.config
         else:
             return None
+
+    def redraw(self, push: PushInterface) -> None:
+        self._state.redraw(push)

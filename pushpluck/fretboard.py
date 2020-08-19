@@ -1,7 +1,7 @@
 from bisect import bisect_left
 from dataclasses import dataclass
 from mido.frozen import FrozenMessage
-from pushpluck.config import Config
+from pushpluck.config import Config, PlayMode
 from pushpluck.midi import is_note_on_msg
 from pushpluck.component import MappedComponent, MappedComponentConfig
 from typing import Dict, List, Optional, Tuple
@@ -17,7 +17,7 @@ class NoteInfo:
         return cls(velocity=velocity, polytouch=None)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ChokeGroup:
     note_order: List[int]
     note_info: Dict[int, NoteInfo]
@@ -73,18 +73,20 @@ class FretboardMessage:
 
 @dataclass(frozen=True)
 class FretboardConfig(MappedComponentConfig):
+    play_mode: PlayMode
     tuning: List[int]
     min_velocity: int
 
     @classmethod
     def extract(cls, root_config: Config) -> 'FretboardConfig':
         return FretboardConfig(
+            play_mode=root_config.play_mode,
             tuning=root_config.tuning,
             min_velocity=root_config.min_velocity
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class FretboardState:
     fingered: List[ChokeGroup]
 
