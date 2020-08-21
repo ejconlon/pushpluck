@@ -132,6 +132,9 @@ class TimeDivCC(Enum):
 
 TIME_DIV_CC_VALUE_LOOKUP: Dict[int, TimeDivCC] = make_enum_value_lookup(TimeDivCC)
 
+MIDI_BASE_CHANNEL = 1
+MIDI_MIN_CHANNEL = 1
+MIDI_MAX_CHANNEL = 16
 
 DEFAULT_PUSH_PORT_NAME = 'Ableton Push User Port'
 DEFAULT_PROCESSED_PORT_NAME = 'pushpluck'

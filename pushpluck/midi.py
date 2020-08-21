@@ -19,6 +19,10 @@ def is_note_on_msg(msg: FrozenMessage) -> bool:
     return msg.type == 'note_on' and msg.velocity > 0
 
 
+def is_note_off_msg(msg: FrozenMessage) -> bool:
+    return (msg.type == 'note_on' and msg.velocity == 0) or msg.type == 'note_off'
+
+
 class MidiSource(metaclass=ABCMeta):
     @abstractmethod
     def recv_msg(self) -> FrozenMessage:

@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum, auto, unique
 from pushpluck import constants
-from pushpluck.config import Config, Layout, PlayMode
+from pushpluck.config import ChannelMode, Config, Layout, PlayMode
 from pushpluck.constants import ButtonCC, ButtonIllum, KnobGroup
 from pushpluck.push import PushEvent, ButtonEvent, KnobEvent, PushInterface
 from pushpluck.scale import SCALES, NoteName
@@ -295,6 +295,11 @@ def default_menu_layout() -> MenuLayout:
                 'Root', low_sens,
                 ChoiceValRange.new([v for v in NoteName], lambda v: v.name),
                 DataclassLens('root')
+            ),
+            KnobControl(
+                'ChanMode', low_sens,
+                ChoiceValRange.new([v for v in ChannelMode], lambda v: v.name),
+                DataclassLens('chan_mode')
             )
         ]
     )

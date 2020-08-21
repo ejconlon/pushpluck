@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Any, TypeVar
 
 
 X = TypeVar('X')
@@ -44,3 +44,8 @@ class Unit:
 
 
 _UNIT_SINGLETON = Unit()
+
+
+class MatchException(Exception):
+    def __init__(self, value: Any) -> None:
+        super().__init__(f'Failed to match value: {value}')

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from pushpluck.config import ColorScheme, Config, NoteType, PadColorMapper
+from pushpluck.config import ColorScheme, Config, NoteType, PadColorMapper, VisState
 from pushpluck.color import Color
-from pushpluck.fretboard import Fretboard, FretboardMessage, TriggerEvent
+from pushpluck.fretboard import BoundedConfig, Fretboard, NoteEffects
 from pushpluck.pos import Pos
 from pushpluck.push import PadEvent, PushInterface
 from pushpluck.midi import MidiSink
@@ -26,10 +26,10 @@ class PadsConfig:
 @dataclass
 class SinglePadState:
     mapper: PadColorMapper
-    pressed: bool
+    vis: VisState
 
     def color(self, scheme: ColorScheme) -> Optional[Color]:
-        return self.mapper.get_color(scheme, self.pressed)
+        return self.mapper.get_color(scheme, self.vis)
 
 
 @dataclass
@@ -38,7 +38,7 @@ class PadsState:
 
     @classmethod
     def default(cls) -> 'PadsState':
-        return cls({pos: SinglePadState(PadColorMapper.misc(False), False) for pos in Pos.iter_all()})
+        return cls({pos: SinglePadState(PadColorMapper.misc(False), VisState.Off) for pos in Pos.iter_all()})
 
 
 class Pads:
@@ -49,8 +49,10 @@ class Pads:
         root_config: Config
     ) -> 'Pads':
         config = PadsConfig.extract(root_config)
-        fretboard = Fretboard.construct(root_config)
         viewport = Viewport.construct(root_config)
+        bounds = viewport.str_bounds()
+        bounded_config = BoundedConfig(bounds, root_config)
+        fretboard = Fretboard.construct(bounded_config)
         return cls(scheme, config, fretboard, viewport)
 
     def __init__(
@@ -89,15 +91,18 @@ class Pads:
             return PadColorMapper.misc(False)
         else:
             note = self._fretboard.get_note(str_pos)
-            name, _ = name_and_octave_from_note(note)
-            note_type: NoteType
-            if classifier.is_root(name):
-                note_type = NoteType.Root
-            elif classifier.is_member(name):
-                note_type = NoteType.Member
+            if note is None:
+                return PadColorMapper.misc(False)
             else:
-                note_type = NoteType.Other
-            return PadColorMapper.note(note_type)
+                name, _ = name_and_octave_from_note(note)
+                note_type: NoteType
+                if classifier.is_root(name):
+                    note_type = NoteType.Root
+                elif classifier.is_member(name):
+                    note_type = NoteType.Member
+                else:
+                    note_type = NoteType.Other
+                return PadColorMapper.note(note_type)
 
     def _reset_pad_colors(self) -> None:
         classifier = self._config.scale.to_classifier(self._config.root)
@@ -108,21 +113,20 @@ class Pads:
     def handle_event(self, push: PushInterface, sink: MidiSink, event: PadEvent) -> None:
         str_pos = self._viewport.str_pos_from_pad_pos(event.pos)
         if str_pos is not None:
-            trigger_event = TriggerEvent(str_pos, event.velocity)
-            fret_msgs = self._fretboard.handle_event(trigger_event)
-            for fret_msg in fret_msgs:
-                self._handle_fret_msg(push, sink, fret_msg)
+            fx = self._fretboard.trigger(str_pos, event.velocity)
+            self._handle_note_effects(push, sink, fx)
 
     def handle_config(self, push: PushInterface, sink: MidiSink, root_config: Config, reset: bool) -> None:
-        fret_msgs = self._fretboard.handle_config(root_config, reset)
-        if fret_msgs is not None:
-            for fret_msg in fret_msgs:
-                self._handle_fret_msg(push, sink, fret_msg)
-            # If there are note-offs or updated config, force reset and redraw of pads
-            reset = True
         unit = self._viewport.handle_config(root_config, reset)
         if unit is not None:
-            # Likewise for viewport changes
+            # If there is an updated config, force reset and redraw of pads
+            reset = True
+        bounds = self._viewport.str_bounds()
+        bounded_config = BoundedConfig(bounds, root_config)
+        fx = self._fretboard.handle_config(bounded_config, reset)
+        if fx is not None:
+            self._handle_note_effects(push, sink, fx)
+            # If there are note-offs or updated config, force reset and redraw of pads
             reset = True
         config = PadsConfig.extract(root_config)
         if config != self._config or reset:
@@ -130,10 +134,13 @@ class Pads:
             self._reset_pad_colors()
             self.redraw(push)
 
-    def _handle_fret_msg(self, push: PushInterface, sink: MidiSink, msg: FretboardMessage) -> None:
-        sink.send_msg(msg.msg)
-        pad_pos = self._viewport.pad_pos_from_str_pos(msg.str_pos)
-        if pad_pos is not None:
-            pressed = msg.is_sounding()
-            self._state.lookup[pad_pos].pressed = pressed
-            self._redraw_pos(push, pad_pos)
+    def _handle_note_effects(self, push: PushInterface, sink: MidiSink, fx: NoteEffects) -> None:
+        # Send notes
+        for fret_msg in fx.msgs:
+            sink.send_msg(fret_msg.msg)
+        # Update display
+        for sp, vis in fx.vis.items():
+            pad_pos = self._viewport.pad_pos_from_str_pos(sp)
+            if pad_pos is not None:
+                self._state.lookup[pad_pos].vis = vis
+                self._redraw_pos(push, pad_pos)

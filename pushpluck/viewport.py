@@ -3,13 +3,13 @@ from pushpluck import constants
 from pushpluck.base import Unit
 from pushpluck.component import MappedComponent, MappedComponentConfig
 from pushpluck.config import Config, Layout
-from pushpluck.fretboard import StringPos
+from pushpluck.fretboard import StringPos, StringBounds
 from pushpluck.pos import Pos
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass(frozen=True)
-class ViewportConfig(MappedComponentConfig):
+class ViewportConfig(MappedComponentConfig[Config]):
     num_strings: int
     layout: Layout
     str_offset: int
@@ -38,13 +38,16 @@ class Viewport(MappedComponent[Config, ViewportConfig, Unit]):
         self._config = config
         return Unit.instance()
 
-    def _total_str_offset(self) -> int:
+    def _view_str_offset(self) -> int:
         max_str_dim = constants.NUM_PAD_ROWS if self._config.layout == Layout.Horiz else constants.NUM_PAD_COLS
         offset = 0
         blanks = max_str_dim - self._config.num_strings
         if blanks > 0:
             offset -= blanks // 2
-        return offset + self._config.str_offset
+        return offset
+
+    def _total_str_offset(self) -> int:
+        return self._view_str_offset() + self._config.str_offset
 
     def str_pos_from_pad_pos(self, pos: Pos) -> Optional[StringPos]:
         str_index: int
@@ -83,3 +86,29 @@ class Viewport(MappedComponent[Config, ViewportConfig, Unit]):
             return None
         else:
             return Pos(row=row, col=col)
+
+    def str_bounds(self) -> Optional[StringBounds]:
+        view_offset = self._view_str_offset()
+        max_str_dim = constants.NUM_PAD_ROWS if self._config.layout == Layout.Horiz else constants.NUM_PAD_COLS
+        num_frets_bounded = constants.NUM_PAD_COLS if self._config.layout == Layout.Horiz else constants.NUM_PAD_ROWS
+
+        valid_indices: List[int] = []
+        for i in range(max_str_dim):
+            o = view_offset + i
+            if o >= 0 and o < self._config.num_strings:
+                valid_indices.append(o)
+
+        if len(valid_indices) == 0:
+            return None
+        else:
+            low_str_index = valid_indices[0]
+            high_str_index = valid_indices[-1]
+            low = StringPos(
+                str_index=low_str_index,
+                fret=self._config.fret_offset
+            )
+            high = StringPos(
+                str_index=high_str_index,
+                fret=low.fret + num_frets_bounded - 1
+            )
+            return StringBounds(low, high)
